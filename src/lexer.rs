@@ -5,7 +5,7 @@ use ast::{Token, KeywordBank};
 
 pub struct Lexer<'a> {
 	text: &'a str,
-	iter: Peekable<Chars<'a>>,
+	pub iter: Peekable<Chars<'a>>,
 	keywords: KeywordBank
 }
 
@@ -79,6 +79,10 @@ impl<'a> Lexer<'a> {
 						}
 						return Some(Token::Div);
 					},
+					'!' => {
+						self.iter.next();
+						return self.peek_choose(Token::Not, Token::NEquals, |c| c == '=');
+					}
 					'.' => {
 						self.iter.next();
 						return self.peek_choose(Token::Dot, Token::DotRange, |c| c == '.');
@@ -172,6 +176,21 @@ impl<'a> Lexer<'a> {
 		}
 
 		v
+	}
+
+	pub fn consume_until<F>(&mut self, f: F) -> Vec<char> 
+		where F: Fn(char) -> bool {
+			let mut v: Vec<char> = vec![];
+
+		while let Some(&ch) = self.iter.peek() {
+			if !f(ch) {
+				self.iter.next();
+				v.push(ch);
+			} else {
+				break;
+			}
+		}
+		v	
 	}
 
 	fn peek_choose<F>(&mut self, opt1: Token, opt2: Token, f: F) -> Option<Token>
