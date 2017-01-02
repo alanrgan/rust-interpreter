@@ -8,24 +8,30 @@ mod interpreter;
 use lexer::Lexer;
 use parser::Parser;
 use interpreter::Interpreter;
-//use ast::{BinOpNode};
+use std::env;
+use std::fs::File;
+use std::io::Read;
+
+fn usage() {
+	println!("usage: ./interpreter FILE");
+}
 
 fn main() {
-	//let x = BinOpNode::Empty;
-	let mut lex = Lexer::new("
-		{
-			true;
-			2+2;
-			1+4*2/2+7;
-			1 > 3 and (2 >= 0);
-		}
-	 ");
+	let args: Vec<String> = env::args().collect();
 
-	/*while let Some(c) = lex.next_token() {
-		println!("{:?}", c)
-	}*/
+	if args.len() != 2 {
+		usage();
+		return;
+	}
+
+	let filename = &args[1].clone();
+	let mut f = File::open(filename).unwrap();
+	let mut input = String::new();
+	f.read_to_string(&mut input).unwrap();
+
+	let mut lex = Lexer::new(&input);
+
 	let mut parser = Parser::new(lex);
-	//parser.parse();
 	let mut interpreter = Interpreter::new(parser);
 	interpreter.interpret();
 }

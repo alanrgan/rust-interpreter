@@ -68,7 +68,7 @@ impl Token {
 		match *self {
 			Token::Plus | Token::Minus | Token::Mult |
 			Token::Div | Token::GThan | Token::LThan |
-			Token::Equals | Token::LTEquals | Token::GTEquals |
+			Token::DEquals | Token::LTEquals | Token::GTEquals |
 			Token::NEquals | Token::And | Token::Or => {
 				true
 			},
@@ -79,7 +79,7 @@ impl Token {
 	pub fn get_precedence(&self) -> u8 {
 		match *self {
 			Token::And | Token::Or => 10,
-			Token::Equals | Token::NEquals => 20,
+			Token::DEquals | Token::NEquals => 20,
 			Token::GThan | Token::LThan |
 			Token::GTEquals | Token::LTEquals => 30,
 			Token::Plus | Token::Minus => 40,
@@ -208,7 +208,9 @@ impl KeywordBank {
 #[derive(Debug, Clone)]
 pub enum Statement {
 	For(Box<ForStatement>),
-	Compound(CompoundStatement),
+	Compound {
+		children: Vec<Statement>,
+	},
 	// temporary
 	Expr(Expression),
 	Empty
@@ -224,23 +226,12 @@ pub struct ForStatement {
 	var: Token
 }
 
-#[derive(Debug, Clone)]
-pub struct CompoundStatement {
-	pub children: Vec<Statement>
-}
-
-impl CompoundStatement {
-	pub fn new() -> CompoundStatement {
-		CompoundStatement { children: vec![] }
-	}
-}
-
 impl Visitable for Statement {
 	fn visit(&self) -> Result<Primitive, String> {
 		//println!("visiting {:?}", self);
 		match *self {
-			Statement::Compound(ref statement) => {
-				for child in statement.children.iter() {
+			Statement::Compound{ref children} => {
+				for child in children {
 					let result = child.visit().unwrap();
 					println!("{}", result);
 				}
@@ -266,7 +257,7 @@ pub enum BinOp {
 	LThan,
 	GTEquals,
 	LTEquals,
-	Equals
+	DEquals
 }
 
 #[derive(Debug, Clone)]
@@ -325,7 +316,7 @@ impl Expression {
 			Token::GThan => BinOp::GThan,
 			Token::GTEquals => BinOp::GTEquals,
 			Token::LTEquals => BinOp::LTEquals,
-			Token::Equals => BinOp::Equals,
+			Token::DEquals => BinOp::DEquals,
 			_ => panic!("Invalid token type")
 		};
 		let bexpr = BinOpExpression { op: op, left: left, right: right };
@@ -354,8 +345,7 @@ impl Visitable for Expression {
 					BinOp::GTEquals => apply_compare(left, right, |first, second| first >= second),
 					BinOp::LThan => apply_compare(left, right, |first, second| first < second),
 					BinOp::LTEquals => apply_compare(left, right, |first, second| first <= second),
-					BinOp::Equals => apply_compare(left, right, |first, second| first == second),
-					//_ => unreachable!()
+					BinOp::DEquals => apply_compare(left, right, |first, second| first == second),
 				}
 			},
 			Expression::Value(ref prim) => Ok(prim.clone()),
@@ -382,6 +372,9 @@ fn apply_compare<F>(left: Primitive, right: Primitive, f: F) -> Result<Primitive
 		(Primitive::Integer(first), Primitive::Integer(second)) => {
 			Ok(Primitive::Bool(f(first, second)))
 		},
+		(Primitive::Bool(first), Primitive::Bool(second)) => {
+			Ok(Primitive::Bool(first == second))
+		}
 		_ => Err(String::from("User of undefined comparison operation"))
 	}
 }

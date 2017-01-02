@@ -72,7 +72,7 @@ impl<'a> Parser<'a> {
 			let statement = self.statement();
 			nodes.push(statement);
 		}
-		Statement::Compound(CompoundStatement{children: nodes})
+		Statement::Compound{children: nodes}
 	}
 
 	fn compound_statement(&mut self) -> Statement {
@@ -154,8 +154,6 @@ impl<'a> Parser<'a> {
 
 			expr = self.infix_expr(expr, next_precedence);
 		}
-		//let tok = self.current_token.clone().unwrap();
-		//println!("curtok is {:?}", tok);
 		expr
 	}
 
