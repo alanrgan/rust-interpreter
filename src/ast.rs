@@ -3,9 +3,12 @@ use std::collections::HashMap;
 use std::convert::From;
 use std::ops::{Add, Sub, Mul, Div};
 use std::fmt;
+use interpreter::NodeType;
 
 pub trait Visitable {
-	fn visit(&self) -> Result<Primitive, String>;
+	fn node_type(&self) -> NodeType;
+	fn as_statement(self: Box<Self>) -> Option<Statement>;
+	fn as_expression(self: Box<Self>) -> Option<Expression>;
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -281,7 +284,6 @@ pub enum Expression {
 	Variable(String),
 	Empty,
 	UnaryOp(Box<UnaryOpExpression>)
-	//Assign(Box<Assign>)
 }
 
 impl Expression {
@@ -302,30 +304,5 @@ impl Expression {
 		};
 		let bexpr = BinOpExpression { op: op, left: left, right: right };
 		Expression::BinOp(Box::new(bexpr))
-	}
-}
-
-pub fn apply_logical<F>(left: Primitive, right: Primitive, f: F) -> Result<Primitive, String>
-	where F: Fn(bool, bool) -> bool
-{
-	match (left, right) {
-		(Primitive::Bool(first), Primitive::Bool(second)) => {
-			Ok(Primitive::Bool(f(first, second)))
-		},
-		_ => Err(String::from("Use of undefined logical operator"))
-	}
-}
-
-pub fn apply_compare<F>(left: Primitive, right: Primitive, f: F) -> Result<Primitive, String>
-	where F: Fn(i32, i32) -> bool
-{
-	match (left, right) {
-		(Primitive::Integer(first), Primitive::Integer(second)) => {
-			Ok(Primitive::Bool(f(first, second)))
-		},
-		(Primitive::Bool(first), Primitive::Bool(second)) => {
-			Ok(Primitive::Bool(first == second))
-		}
-		_ => Err(String::from("User of undefined comparison operation"))
 	}
 }

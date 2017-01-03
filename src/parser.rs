@@ -1,5 +1,6 @@
 use lexer::Lexer;
 use ast::*;
+use std::collections::HashMap;
 
 pub struct Parser<'a> {
 	lexer: Lexer<'a>,
@@ -12,7 +13,7 @@ impl<'a> Parser<'a> {
 		let mut parser = Parser {
 			lexer: lexer,
 			prev_token: None,
-			current_token: None
+			current_token: None,
 		};
 
 		parser.current_token = parser.lexer.next_token();

@@ -1,30 +1,36 @@
 use ast::*;
 use parser::Parser;
+use std::collections::HashMap;
+use std::any::{Any, TypeId};
 
 pub struct Interpreter<'a> {
-	parser: Parser<'a>
+	parser: Parser<'a>,
+	vmap: HashMap<String, Primitive> // map variable name to value
 }
 
 impl<'a> Interpreter<'a> {
 	pub fn new(parser: Parser) -> Interpreter {
-		Interpreter { parser: parser }
+		Interpreter { parser: parser, vmap: HashMap::new() }
 	}
 
 	pub fn interpret(&mut self) -> Primitive {
-		self.parser.parse().visit().unwrap()
+		let parsed_input = self.parser.parse();
+		self.visit(parsed_input).unwrap()		
 	}
-}
 
-impl Visitable for Expression {
-	fn visit(&self) -> Result<Primitive, String> {
-		match *self {
+	pub fn visit(&mut self, node: Box<Visitable>) -> Result<Primitive, String> {
+		match node.node_type() {
+			NodeType::Expression => self.visit_expr(&node.as_expression().unwrap()),
+			NodeType::Statement => self.visit_statement(&node.as_statement().unwrap())
+		}
+	}
+
+	// need to do visiting as part of interpeter so that a HashMap can be kept
+	fn visit_expr(&mut self, expr: &Expression) -> Result<Primitive, String> {
+		match *expr {
 			Expression::BinOp(ref bexpr) => {
-				let left = bexpr.clone().left
-							    .visit()
-							    .unwrap();
-				let right = bexpr.clone().right
-								.visit()
-								.unwrap();
+				let left = self.visit_expr(&bexpr.left).unwrap();
+				let right = self.visit_expr(&bexpr.right).unwrap();
 				match bexpr.op {
 					BinOp::Plus => Ok(left + right),
 					BinOp::Minus => Ok(left - right),
@@ -43,15 +49,12 @@ impl Visitable for Expression {
 			_ => Ok(Primitive::Empty)
 		}
 	}
-}
 
-impl Visitable for Statement {
-	fn visit(&self) -> Result<Primitive, String> {
-		//println!("visiting {:?}", self);
-		match *self {
+	fn visit_statement(&mut self, statement: &Statement) -> Result<Primitive, String> {
+		match *statement {
 			Statement::Compound{ref children} => {
 				for child in children {
-					let result = child.visit().unwrap();
+					let result = self.visit(Box::new(child.clone())).unwrap();
 					println!("{}", result);
 				}
 				Ok(Primitive::Empty)
@@ -60,9 +63,55 @@ impl Visitable for Statement {
 				Ok(Primitive::Empty)
 			},
 			Statement::Expr(ref expr) => {
-				expr.visit()
+				self.visit_expr(expr)
 			},
 			_ => Ok(Primitive::Empty)
 		}
+	}
+}
+
+pub enum NodeType {
+	Expression,
+	Statement
+}
+
+impl Visitable for Expression {
+	fn node_type(&self) -> NodeType { NodeType::Expression }
+
+	fn as_expression(self: Box<Self>) -> Option<Expression> { Some(*self) }
+
+	fn as_statement(self: Box<Self>) -> Option<Statement> { None }
+}
+
+impl Visitable for Statement {
+	fn node_type(&self) -> NodeType { NodeType::Statement }
+
+	fn as_expression(self: Box<Self>) -> Option<Expression> { None }
+
+	fn as_statement(self: Box<Self>) -> Option<Statement> { Some(*self) }
+}
+
+fn apply_logical<F>(left: Primitive, right: Primitive, f: F) -> Result<Primitive, String>
+	where F: Fn(bool, bool) -> bool
+{
+	match (left, right) {
+		(Primitive::Bool(first), Primitive::Bool(second)) => {
+			Ok(Primitive::Bool(f(first, second)))
+		},
+		_ => Err(String::from("Use of undefined logical operator"))
+	}
+}
+
+fn apply_compare<F>(left: Primitive, right: Primitive, f: F) -> Result<Primitive, String>
+	where F: Fn(i32, i32) -> bool
+{
+	match (left, right) {
+		(Primitive::Integer(first), Primitive::Integer(second)) => {
+			Ok(Primitive::Bool(f(first, second)))
+		},
+		(Primitive::Bool(first), Primitive::Bool(second)) => {
+			Ok(Primitive::Bool(first == second))
+		}
+		_ => Err(String::from("User of undefined comparison operation"))
 	}
 }
