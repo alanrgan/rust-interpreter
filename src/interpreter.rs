@@ -62,7 +62,7 @@ impl<'a> Interpreter<'a> {
 			Statement::Compound{ref children} => {
 				for child in children {
 					let result = self.visit(Box::new(child.clone())).unwrap();
-					println!("{}", result);
+					//println!("{}", result);
 				}
 				Ok(Primitive::Empty)
 			},
@@ -78,7 +78,7 @@ impl<'a> Interpreter<'a> {
 							Ok(Primitive::Empty)
 						}
 					},
-					Ok(_) => panic!("expected boolean expression in 'if' statment"),
+					Ok(_) => panic!("expected boolean expression in 'if' statement"),
 					Err(e) => panic!(e)
 				}
 				//Ok(Primitive::Empty)

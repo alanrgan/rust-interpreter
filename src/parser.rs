@@ -46,10 +46,7 @@ impl<'a> Parser<'a> {
 
 	pub fn parse(&mut self) -> Box<Visitable> {
 		//self.eat(Token::Plus);
-		let asgn = self.compound_statement();
-		println!("{:?}", asgn);
-		Box::new(asgn)
-		//Box::new(self.compound_statement())
+		Box::new(self.compound_statement())
 		//Box::new(self.factor())
 		//Box::new(self.factor());
 		//println!("yoyo");
@@ -58,14 +55,11 @@ impl<'a> Parser<'a> {
 	}
 
 	fn statement(&mut self) -> Statement {
-		match self.current_token.clone().unwrap() {
-			Token::LCurl => {
-				self.compound_statement()
-			},
-			Token::If => {
-				self.conditional()
-			},
-			Token::Ident(varname) => {
+		match self.current_token.clone() {
+			Some(Token::LCurl) => self.compound_statement(),
+			Some(Token::If) => self.conditional(),
+			Some(Token::For) => self.for_loop(),
+			Some(Token::Ident(varname)) => {
 				let var = self.variable();
 
 				match self.current_token {
@@ -77,7 +71,8 @@ impl<'a> Parser<'a> {
 					_ => Statement::Empty
 				}
 			},
-			_ => { Statement::Expr(self.expr(0)) }
+			Some(_) => { Statement::Expr(self.expr(0)) },
+			None => Statement::Empty
 		}
 	}
 
@@ -92,7 +87,8 @@ impl<'a> Parser<'a> {
 					self.eat(Token::Comment);
 					// TO COMPLETE
 				},
-				_ => { break; }
+				&Token::RCurl => break,
+				_ => {}
 			}
 			let statement = self.statement();
 			nodes.push(statement);
@@ -138,6 +134,10 @@ impl<'a> Parser<'a> {
 			},
 			_ => panic!("Expected a variable on assignment")
 		}
+	}
+
+	fn for_loop(&mut self) -> Statement {
+		Statement::Empty
 	}
 
 	fn op_assignment(&mut self, var: Expression, op: Token) -> Statement {
