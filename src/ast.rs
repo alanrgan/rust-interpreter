@@ -214,6 +214,7 @@ pub enum Statement {
 	For(Box<ForStatement>),
 	Compound { children: Vec<Statement> },
 	Assign { var: Expression, value: Expression },
+	If(Box<IfStatement>),
 	// temporary
 	Expr(Expression),
 	Empty
@@ -230,6 +231,23 @@ pub struct ForStatement {
 }
 
 #[derive(Debug, Clone)]
+pub struct IfStatement {
+	pub pred: Expression,
+	pub conseq: Statement,
+	pub alt: Option<Statement>
+}
+
+impl IfStatement {
+	pub fn new(pred: Expression, conseq: Statement, alt: Option<Statement>) -> IfStatement {
+		IfStatement {
+			pred: pred,
+			conseq: conseq,
+			alt: alt
+		}
+	}
+}
+
+#[derive(Debug, Clone)]
 pub enum BinOp {
 	Mult,
 	Div,
@@ -241,7 +259,8 @@ pub enum BinOp {
 	LThan,
 	GTEquals,
 	LTEquals,
-	DEquals
+	DEquals,
+	NEquals
 }
 
 #[derive(Debug, Clone)]
@@ -300,6 +319,7 @@ impl Expression {
 			Token::GTEquals => BinOp::GTEquals,
 			Token::LTEquals => BinOp::LTEquals,
 			Token::DEquals => BinOp::DEquals,
+			Token::NEquals => BinOp::NEquals,
 			_ => panic!("Invalid BinOp token type: {:?}", t)
 		};
 		let bexpr = BinOpExpression { op: op, left: left, right: right };

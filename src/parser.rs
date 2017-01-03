@@ -62,6 +62,9 @@ impl<'a> Parser<'a> {
 			Token::LCurl => {
 				self.compound_statement()
 			},
+			Token::If => {
+				self.conditional()
+			},
 			Token::Ident(varname) => {
 				let var = self.variable();
 
@@ -107,6 +110,21 @@ impl<'a> Parser<'a> {
 			}
 		}
 		Statement::Empty
+	}
+
+	fn conditional(&mut self) -> Statement {
+		self.eat(Token::If);
+		let pred = self.expr(0);
+		let conseq = self.compound_statement();
+		let mut alt = None;
+		match self.current_token {
+			Some(Token::Else) => {
+				self.eat(Token::Else);
+				alt = Some(self.compound_statement());
+			},
+			_ => {}
+		}
+		Statement::If(Box::new(IfStatement::new(pred, conseq, alt)))
 	}
 
 	fn assignment(&mut self, var: Expression) -> Statement {

@@ -43,6 +43,7 @@ impl<'a> Interpreter<'a> {
 					BinOp::LThan => apply_compare(left, right, |first, second| first < second),
 					BinOp::LTEquals => apply_compare(left, right, |first, second| first <= second),
 					BinOp::DEquals => apply_compare(left, right, |first, second| first == second),
+					BinOp::NEquals => apply_compare(left, right, |first, second| first != second)
 				}
 			},
 			Expression::Variable(ref vname) => {
@@ -64,6 +65,23 @@ impl<'a> Interpreter<'a> {
 					println!("{}", result);
 				}
 				Ok(Primitive::Empty)
+			},
+			Statement::If(ref if_stmt) => {
+				match self.visit_expr(&if_stmt.pred) {
+					Ok(Primitive::Bool(value)) => {
+						if value {
+							Ok(self.visit_statement(&if_stmt.conseq).unwrap())
+						} else if if_stmt.alt.is_some() {
+							let alt = if_stmt.alt.clone().unwrap();
+							Ok(self.visit_statement(&alt).unwrap())
+						} else {
+							Ok(Primitive::Empty)
+						}
+					},
+					Ok(_) => panic!("expected boolean expression in 'if' statment"),
+					Err(e) => panic!(e)
+				}
+				//Ok(Primitive::Empty)
 			},
 			Statement::Assign{ref var, ref value} => {
 				match (var, value) {
