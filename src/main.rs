@@ -34,4 +34,5 @@ fn main() {
 	let mut parser = Parser::new(lex);
 	let mut interpreter = Interpreter::new(parser);
 	interpreter.interpret();
+	println!("{:?}", interpreter.vmap);
 }

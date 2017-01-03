@@ -5,7 +5,7 @@ use std::any::{Any, TypeId};
 
 pub struct Interpreter<'a> {
 	parser: Parser<'a>,
-	vmap: HashMap<String, Primitive> // map variable name to value
+	pub vmap: HashMap<String, Primitive> // map variable name to value
 }
 
 impl<'a> Interpreter<'a> {
@@ -15,7 +15,7 @@ impl<'a> Interpreter<'a> {
 
 	pub fn interpret(&mut self) -> Primitive {
 		let parsed_input = self.parser.parse();
-		self.visit(parsed_input).unwrap()		
+		self.visit(parsed_input).unwrap()
 	}
 
 	pub fn visit(&mut self, node: Box<Visitable>) -> Result<Primitive, String> {
@@ -45,6 +45,12 @@ impl<'a> Interpreter<'a> {
 					BinOp::DEquals => apply_compare(left, right, |first, second| first == second),
 				}
 			},
+			Expression::Variable(ref vname) => {
+				match self.vmap.get(vname) {
+					Some(val) => Ok(val.clone()),
+					None => Err(format!("No variable named '{}' defined in scope", vname))
+				}
+			}
 			Expression::Value(ref prim) => Ok(prim.clone()),
 			_ => Ok(Primitive::Empty)
 		}
@@ -60,11 +66,16 @@ impl<'a> Interpreter<'a> {
 				Ok(Primitive::Empty)
 			},
 			Statement::Assign{ref var, ref value} => {
-				Ok(Primitive::Empty)
+				match (var, value) {
+					(&Expression::Variable(ref vname), _) => {
+						let val = self.visit_expr(value).unwrap();
+						self.vmap.insert(vname.clone(), val.clone());
+						Ok(val)
+					},
+					_ => unreachable!()
+				}
 			},
-			Statement::Expr(ref expr) => {
-				self.visit_expr(expr)
-			},
+			Statement::Expr(ref expr) => self.visit_expr(expr),
 			_ => Ok(Primitive::Empty)
 		}
 	}
