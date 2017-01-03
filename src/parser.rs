@@ -37,9 +37,18 @@ impl<'a> Parser<'a> {
 		}
 	}
 
+	fn eat_current(&mut self) {
+		let current_token = self.current_token.clone();
+		self.prev_token = current_token;
+		self.current_token = self.lexer.next_token();
+	}
+
 	pub fn parse(&mut self) -> Box<Visitable> {
 		//self.eat(Token::Plus);
-		Box::new(self.compound_statement())
+		let asgn = self.compound_statement();
+		println!("{:?}", asgn);
+		Box::new(asgn)
+		//Box::new(self.compound_statement())
 		//Box::new(self.factor())
 		//Box::new(self.factor());
 		//println!("yoyo");
@@ -51,6 +60,18 @@ impl<'a> Parser<'a> {
 		match self.current_token.clone().unwrap() {
 			Token::LCurl => {
 				self.compound_statement()
+			},
+			Token::Ident(varname) => {
+				let var = self.variable();
+
+				match self.current_token {
+					Some(Token::Equals) => self.assignment(var),
+					Some(Token::MEquals) => self.op_assignment(var, Token::Minus),
+					Some(Token::PEquals) => self.op_assignment(var, Token::Plus),
+					Some(Token::MultEquals) => self.op_assignment(var, Token::Mult),
+					Some(Token::DivEquals) => self.op_assignment(var, Token::Div),
+					_ => Statement::Empty
+				}
 			},
 			_ => { Statement::Expr(self.expr(0)) }
 		}
@@ -85,6 +106,32 @@ impl<'a> Parser<'a> {
 			}
 		}
 		Statement::Empty
+	}
+
+	fn assignment(&mut self, var: Expression) -> Statement {
+		self.eat(Token::Equals);
+		match var {
+			Expression::Variable(_) => {
+				Statement::Assign {
+					var: var.clone(),
+					value: self.expr(0)
+				}
+			},
+			_ => panic!("Expected a variable on assignment")
+		}
+	}
+
+	fn op_assignment(&mut self, var: Expression, op: Token) -> Statement {
+		self.eat_current();
+		match var {
+			Expression::Variable(_) => {
+				Statement::Assign {
+					var: var.clone(),
+					value: Expression::new_binop(op, var, self.expr(0))
+				}
+			},
+			_ => panic!("Expected a variable on assignment")
+		}
 	}
 
 	fn factor(&mut self) -> Expression {
@@ -130,6 +177,7 @@ impl<'a> Parser<'a> {
 	fn variable(&mut self) -> Expression {
 		let tok = self.current_token.clone().unwrap();
 		if let Token::Ident(val) = tok {
+			self.eat(Token::Ident(String::from("")));
 			Expression::Variable(val)
 		} else {
 			panic!("expected variable name, got {:?}", tok);

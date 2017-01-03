@@ -26,6 +26,7 @@ pub enum Token {
 	MEquals,
 	NEquals,
 	MultEquals,
+	DivEquals,
 	LParen,
 	RParen,
 	Semi,
@@ -208,9 +209,8 @@ impl KeywordBank {
 #[derive(Debug, Clone)]
 pub enum Statement {
 	For(Box<ForStatement>),
-	Compound {
-		children: Vec<Statement>,
-	},
+	Compound { children: Vec<Statement> },
+	Assign { var: Expression, value: Expression },
 	// temporary
 	Expr(Expression),
 	Empty
@@ -218,31 +218,12 @@ pub enum Statement {
 
 #[derive(Debug, Clone)]
 pub struct ForStatement {
-	assign: AssignStatement,
+	assign: Statement, // must be an assign statement
 	//range:
 	cond: Expression,
 	post: Option<Expression>,
 	conseq: Statement,
 	var: Token
-}
-
-impl Visitable for Statement {
-	fn visit(&self) -> Result<Primitive, String> {
-		//println!("visiting {:?}", self);
-		match *self {
-			Statement::Compound{ref children} => {
-				for child in children {
-					let result = child.visit().unwrap();
-					println!("{}", result);
-				}
-				Ok(Primitive::Empty)
-			},
-			Statement::Expr(ref expr) => {
-				expr.visit()
-			},
-			_ => Ok(Primitive::Empty)
-		}
-	}
 }
 
 #[derive(Debug, Clone)]
@@ -262,9 +243,9 @@ pub enum BinOp {
 
 #[derive(Debug, Clone)]
 pub struct BinOpExpression {
-	op: BinOp,
-	left: Expression,
-	right: Expression
+	pub op: BinOp,
+	pub left: Expression,
+	pub right: Expression
 }
 
 #[derive(Debug, Clone)]
@@ -317,44 +298,14 @@ impl Expression {
 			Token::GTEquals => BinOp::GTEquals,
 			Token::LTEquals => BinOp::LTEquals,
 			Token::DEquals => BinOp::DEquals,
-			_ => panic!("Invalid token type")
+			_ => panic!("Invalid BinOp token type: {:?}", t)
 		};
 		let bexpr = BinOpExpression { op: op, left: left, right: right };
 		Expression::BinOp(Box::new(bexpr))
 	}
 }
 
-impl Visitable for Expression {
-	fn visit(&self) -> Result<Primitive, String> {
-		match *self {
-			Expression::BinOp(ref bexpr) => {
-				let left = bexpr.clone().left
-							    .visit()
-							    .unwrap();
-				let right = bexpr.clone().right
-								.visit()
-								.unwrap();
-				match bexpr.op {
-					BinOp::Plus => Ok(left + right),
-					BinOp::Minus => Ok(left - right),
-					BinOp::Mult => Ok(left * right),
-					BinOp::Div => Ok(left / right),
-					BinOp::And => apply_logical(left, right, |first, second| first && second),
-					BinOp::Or => apply_logical(left, right, |first, second| first || second),
-					BinOp::GThan => apply_compare(left, right, |first, second| first > second),
-					BinOp::GTEquals => apply_compare(left, right, |first, second| first >= second),
-					BinOp::LThan => apply_compare(left, right, |first, second| first < second),
-					BinOp::LTEquals => apply_compare(left, right, |first, second| first <= second),
-					BinOp::DEquals => apply_compare(left, right, |first, second| first == second),
-				}
-			},
-			Expression::Value(ref prim) => Ok(prim.clone()),
-			_ => Ok(Primitive::Empty)
-		}
-	}
-}
-
-fn apply_logical<F>(left: Primitive, right: Primitive, f: F) -> Result<Primitive, String>
+pub fn apply_logical<F>(left: Primitive, right: Primitive, f: F) -> Result<Primitive, String>
 	where F: Fn(bool, bool) -> bool
 {
 	match (left, right) {
@@ -365,7 +316,7 @@ fn apply_logical<F>(left: Primitive, right: Primitive, f: F) -> Result<Primitive
 	}
 }
 
-fn apply_compare<F>(left: Primitive, right: Primitive, f: F) -> Result<Primitive, String>
+pub fn apply_compare<F>(left: Primitive, right: Primitive, f: F) -> Result<Primitive, String>
 	where F: Fn(i32, i32) -> bool
 {
 	match (left, right) {
@@ -377,9 +328,4 @@ fn apply_compare<F>(left: Primitive, right: Primitive, f: F) -> Result<Primitive
 		}
 		_ => Err(String::from("User of undefined comparison operation"))
 	}
-}
-
-#[derive(Debug, Clone)]
-pub struct AssignStatement {
-
 }

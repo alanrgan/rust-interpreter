@@ -70,6 +70,10 @@ impl<'a> Lexer<'a> {
 									self.iter.next();
 									return Some(Token::Comment);
 								},
+								'=' => {
+									self.iter.next();
+									return Some(Token::DivEquals);
+								},
 								'*' => {
 									self.iter.next();
 									return Some(Token::BlockStart);
