@@ -45,6 +45,15 @@ impl<'a> Interpreter<'a> {
 					BinOp::NEquals => apply_compare(left, right, |first, second| first != second)
 				}
 			},
+			Expression::UnaryOp(ref op_expr) => {
+				let val = self.visit_expr(&op_expr.val);
+				match (&op_expr.op, val.clone()) {
+					(&UnaryOp::Plus, Ok(Primitive::Integer(_))) => val,
+					(&UnaryOp::Minus, Ok(Primitive::Integer(num))) => Ok(Primitive::Integer(-num)),
+					(&UnaryOp::Not, Ok(Primitive::Bool(bool_val))) => Ok(Primitive::Bool(!bool_val)),
+					_ => Err(String::from("invalid unary operation"))
+				}
+			},
 			Expression::Variable(ref vname) => {
 				match self.vmap.get(vname) {
 					Some(val) => Ok(val.clone()),

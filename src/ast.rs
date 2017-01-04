@@ -289,8 +289,8 @@ pub enum UnaryOp {
 
 #[derive(Debug, Clone)]
 pub struct UnaryOpExpression {
-	op: UnaryOp,
-	val: Expression
+	pub op: UnaryOp,
+	pub val: Expression
 }
 
 impl UnaryOpExpression {
@@ -299,6 +299,7 @@ impl UnaryOpExpression {
 			op: match tok {
 				Token::Plus => UnaryOp::Plus,
 				Token::Minus => UnaryOp::Minus,
+				Token::Not => UnaryOp::Not,
 				_ => panic!("invalid unary op")
 			},
 			val: exp
