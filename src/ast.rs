@@ -212,6 +212,7 @@ impl KeywordBank {
 #[derive(Debug, Clone)]
 pub enum Statement {
 	For(Box<ForStatement>),
+	While { pred: Expression, conseq: Box<Statement> },
 	Compound { children: Vec<Statement> },
 	Assign { var: Expression, value: Expression },
 	If(Box<IfStatement>),

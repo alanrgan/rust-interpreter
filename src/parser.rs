@@ -59,6 +59,7 @@ impl<'a> Parser<'a> {
 			Some(Token::LCurl) => self.compound_statement(),
 			Some(Token::If) => self.conditional(),
 			Some(Token::For) => self.for_loop(),
+			Some(Token::While) => self.while_loop(),
 			Some(Token::Ident(varname)) => {
 				let var = self.variable();
 
@@ -138,6 +139,13 @@ impl<'a> Parser<'a> {
 
 	fn for_loop(&mut self) -> Statement {
 		Statement::Empty
+	}
+
+	fn while_loop(&mut self) -> Statement {
+		self.eat(Token::While);
+		let pred = self.expr(0);
+		let conseq = self.compound_statement();
+		Statement::While{ pred: pred, conseq: Box::new(conseq) }
 	}
 
 	fn op_assignment(&mut self, var: Expression, op: Token) -> Statement {

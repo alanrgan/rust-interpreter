@@ -83,6 +83,27 @@ impl<'a> Interpreter<'a> {
 				}
 				//Ok(Primitive::Empty)
 			},
+			Statement::While{ref pred, ref conseq} => {
+				let pred_val = self.visit_expr(&pred);
+				while let Ok(Primitive::Bool(value)) = self.visit_expr(&pred) {
+					if value { self.visit_statement(conseq).unwrap(); }
+					else { break; }
+					/*match prim {
+						Primitive::Bool(value) => {
+							if value {
+								self.visit_statement(conseq).unwrap();
+							} else {
+								break;
+							}
+						},
+						_ => panic!("expected boolean expression in 'while' statement")
+					};*/
+				}
+				if let Ok(Primitive::Bool(_)) = pred_val {} else {
+					panic!("expected boolean expression in 'while' statement");
+				}
+				Ok(Primitive::Empty)
+			},
 			Statement::Assign{ref var, ref value} => {
 				match (var, value) {
 					(&Expression::Variable(ref vname), _) => {
