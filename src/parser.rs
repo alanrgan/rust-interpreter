@@ -1,6 +1,5 @@
 use lexer::Lexer;
 use ast::*;
-use std::collections::HashMap;
 
 pub struct Parser<'a> {
 	lexer: Lexer<'a>,
@@ -60,7 +59,7 @@ impl<'a> Parser<'a> {
 			Some(Token::If) => self.conditional(),
 			Some(Token::For) => self.for_loop(),
 			Some(Token::While) => self.while_loop(),
-			Some(Token::Ident(varname)) => {
+			Some(Token::Ident(_)) => {
 				let var = self.variable();
 
 				match self.current_token {
@@ -71,6 +70,10 @@ impl<'a> Parser<'a> {
 					Some(Token::DivEquals) => self.op_assignment(var, Token::Div),
 					_ => Statement::Empty
 				}
+			},
+			Some(Token::Break) => {
+				self.eat(Token::Break);
+				Statement::Term(TermToken::Break) 
 			},
 			Some(_) => { Statement::Expr(self.expr(0)) },
 			None => Statement::Empty
@@ -189,7 +192,6 @@ impl<'a> Parser<'a> {
 			Token::Ident(..) => { return self.variable(); },
 			_ => return Expression::Empty
 		}
-		Expression::Empty
 	}
 
 	fn string(&mut self) -> String {

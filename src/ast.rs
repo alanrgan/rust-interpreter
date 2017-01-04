@@ -110,6 +110,7 @@ pub enum Primitive {
 	Bool(bool),
 	Integer(i32),
 	Str(String),
+	LTerm(TermToken),
 	Empty
 }
 
@@ -119,7 +120,7 @@ impl fmt::Display for Primitive {
 			Primitive::Bool(ref val) => write!(f, "{}", val),
 			Primitive::Integer(ref val) => write!(f, "{}", val),
 			Primitive::Str(ref val) => write!(f, "{}", val),
-			Primitive::Empty => write!(f, "")
+			_ => write!(f, "")
 		}
 	}
 }
@@ -175,6 +176,13 @@ impl Div for Primitive {
 	}
 }
 
+#[derive(Debug, Clone)]
+pub enum TermToken {
+	Break,
+	Continue,
+	Return { retval: Box<Expression> }
+}
+
 #[derive(PartialEq)]
 pub struct KeywordBank {
 	kwords: HashMap<&'static str, Token>
@@ -218,6 +226,7 @@ pub enum Statement {
 	If(Box<IfStatement>),
 	// temporary
 	Expr(Expression),
+	Term(TermToken),
 	Empty
 }
 

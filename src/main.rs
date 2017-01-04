@@ -29,9 +29,9 @@ fn main() {
 	let mut input = String::new();
 	f.read_to_string(&mut input).unwrap();
 
-	let mut lex = Lexer::new(&input);
+	let lex = Lexer::new(&input);
 
-	let mut parser = Parser::new(lex);
+	let parser = Parser::new(lex);
 	let mut interpreter = Interpreter::new(parser);
 	interpreter.interpret();
 	println!("{:?}", interpreter.vmap);

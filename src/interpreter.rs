@@ -1,7 +1,6 @@
 use ast::*;
 use parser::Parser;
 use std::collections::HashMap;
-use std::any::{Any, TypeId};
 
 pub struct Interpreter<'a> {
 	parser: Parser<'a>,
@@ -61,7 +60,14 @@ impl<'a> Interpreter<'a> {
 		match *statement {
 			Statement::Compound{ref children} => {
 				for child in children {
-					let result = self.visit(Box::new(child.clone())).unwrap();
+					if let &Statement::Term(TermToken::Break) = child {
+						println!("HERE!!");
+						return Ok(Primitive::LTerm(TermToken::Break));
+					}
+					let result = self.visit(Box::new(child.clone()));
+					if let Ok(Primitive::LTerm(TermToken::Break)) = result {
+						return result;
+					}
 					//println!("{}", result);
 				}
 				Ok(Primitive::Empty)
@@ -70,10 +76,12 @@ impl<'a> Interpreter<'a> {
 				match self.visit_expr(&if_stmt.pred) {
 					Ok(Primitive::Bool(value)) => {
 						if value {
-							Ok(self.visit_statement(&if_stmt.conseq).unwrap())
+							let result = self.visit_statement(&if_stmt.conseq);
+							println!("result is {:?}", result);
+							result
 						} else if if_stmt.alt.is_some() {
 							let alt = if_stmt.alt.clone().unwrap();
-							Ok(self.visit_statement(&alt).unwrap())
+							self.visit_statement(&alt)
 						} else {
 							Ok(Primitive::Empty)
 						}
@@ -86,18 +94,13 @@ impl<'a> Interpreter<'a> {
 			Statement::While{ref pred, ref conseq} => {
 				let pred_val = self.visit_expr(&pred);
 				while let Ok(Primitive::Bool(value)) = self.visit_expr(&pred) {
-					if value { self.visit_statement(conseq).unwrap(); }
+					if value {
+						match self.visit_statement(conseq) {
+							Ok(Primitive::LTerm(TermToken::Break)) => break,
+							_ => {}
+						}; 
+					}
 					else { break; }
-					/*match prim {
-						Primitive::Bool(value) => {
-							if value {
-								self.visit_statement(conseq).unwrap();
-							} else {
-								break;
-							}
-						},
-						_ => panic!("expected boolean expression in 'while' statement")
-					};*/
 				}
 				if let Ok(Primitive::Bool(_)) = pred_val {} else {
 					panic!("expected boolean expression in 'while' statement");
