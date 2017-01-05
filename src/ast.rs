@@ -183,17 +183,6 @@ impl Div for Primitive {
 	}
 }
 
-/*impl From<Token> for Primitive {
-	fn from(token: Token) -> Primitive {
-		match token {
-			Token::Bool(val) => Primitive::Bool(val),
-			Token::Ident(val) => Primitive::Ident(val),
-			Token::Integer(val) => Primitive::Integer(val),
-			_ => panic!("cannot convert {:?} to primitive", token)
-		}
-	}
-}*/
-
 #[derive(Debug, Clone)]
 pub enum TermToken {
 	Break,
@@ -203,7 +192,8 @@ pub enum TermToken {
 
 #[derive(Debug, Clone)]
 pub struct List {
-	values: Vec<ListElem>
+	values: Vec<ListElem>,
+	length: usize
 }
 
 #[derive(Debug, Clone)]
@@ -214,11 +204,12 @@ pub enum ListElem {
 
 impl List {
 	pub fn new() -> List {
-		List { values: vec![] }
+		List { values: vec![], length: 0 }
 	}
 
 	pub fn push(&mut self, elem: ListElem) {
 		self.values.push(elem);
+		self.length += 1;
 	}
 }
 

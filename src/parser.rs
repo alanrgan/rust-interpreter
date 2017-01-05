@@ -215,8 +215,14 @@ impl<'a> Parser<'a> {
 						},
 						Some(_) => {
 							let top = list_stack.last_mut().unwrap();
-							let value = ListElem::Value(self.expr(0));
-							top.push(value);
+							let expr = self.expr(0);
+							match expr {
+								Expression::Empty => panic!("found unexpected expression in array"),
+								_ => {
+									let value = ListElem::Value(expr);
+									top.push(value);
+								}
+							}
 						},
 						None => panic!("error, reached none")
 					};
