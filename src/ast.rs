@@ -55,7 +55,8 @@ pub enum Token {
 	For,
 	Continue,
 	Return,
-	Break
+	Break,
+	Print
 }
 
 impl Token {
@@ -110,6 +111,7 @@ pub enum Primitive {
 	Bool(bool),
 	Integer(i32),
 	Str(String),
+	Array(Vec<Primitive>),
 	LTerm(TermToken),
 	Empty
 }
@@ -132,8 +134,13 @@ impl Add for Primitive {
 			(Primitive::Integer(first), Primitive::Integer(second)) => {
 				Primitive::Integer(first + second)
 			},
-			(Primitive::Str(first), Primitive::Str(second)) => {
-				Primitive::Str(first+&second[..])
+			(Primitive::Str(first), second) => {
+				Primitive::Str(format!("{}{}", first, second))
+				//Primitive::Str(first+&second[..])
+			},
+			(first, Primitive::Str(second)) => {
+				Primitive::Str(format!("{}{}", first, second))
+				//Primitive::Str(first+&second[..])
 			},
 			_ => panic!("Use of undefined add operation")
 		}
@@ -203,7 +210,8 @@ impl KeywordBank {
 						"break" => Token::Break,
 						"and" => Token::And,
 						"or" => Token::Or,
-						"not" => Token::Not
+						"not" => Token::Not,
+						"print" => Token::Print
  					}
 		}
 	}
@@ -224,6 +232,7 @@ pub enum Statement {
 	Compound { children: Vec<Statement> },
 	Assign { var: Expression, value: Expression },
 	If(Box<IfStatement>),
+	Print(Expression),
 	// temporary
 	Expr(Expression),
 	Term(TermToken),

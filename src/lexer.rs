@@ -189,12 +189,29 @@ impl<'a> Lexer<'a> {
 		while let Some(&ch) = self.iter.peek() {
 			if !f(ch) {
 				self.iter.next();
-				v.push(ch);
+				if let Some(esc_char) = self.peek_escape_char(ch) {
+					v.push(esc_char);
+				} else {
+					v.push(ch);
+				}
 			} else {
 				break;
 			}
 		}
 		v	
+	}
+
+	fn peek_escape_char(&mut self, curchar: char) -> Option<char> {
+		if curchar != '\\' { return None; }
+		let result = match self.iter.peek() {
+			Some(&'n') => Some('\n'),
+			Some(&'t') => Some('\t'),
+			Some(&'\\') => Some('\\'),
+			Some(&'"') => Some('"'),
+			_ => None 
+		};
+		self.iter.next();
+		result
 	}
 
 	fn peek_choose<F>(&mut self, opt1: Token, opt2: Token, f: F) -> Option<Token>

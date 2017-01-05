@@ -75,6 +75,7 @@ impl<'a> Parser<'a> {
 				self.eat(Token::Break);
 				Statement::Term(TermToken::Break) 
 			},
+			Some(Token::Print) => self.print_statement(),
 			Some(_) => { Statement::Expr(self.expr(0)) },
 			None => Statement::Empty
 		}
@@ -164,6 +165,14 @@ impl<'a> Parser<'a> {
 		}
 	}
 
+	fn print_statement(&mut self) -> Statement {
+		self.eat(Token::Print);
+		self.eat(Token::LParen);
+		let node = Statement::Print(self.expr(0));
+		self.eat(Token::RParen);
+		node
+	}
+
 	fn factor(&mut self) -> Expression {
 		let token = self.current_token.clone().unwrap();
 		match token {
@@ -183,6 +192,9 @@ impl<'a> Parser<'a> {
 				let string = self.string();
 				return Expression::Value(Primitive::Str(string));
 			},
+			/*Token::LBrace => {
+
+			},*/
 			Token::LParen => {
 				self.eat(Token::LParen);
 				let expr = self.expr(0);

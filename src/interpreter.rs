@@ -70,7 +70,6 @@ impl<'a> Interpreter<'a> {
 			Statement::Compound{ref children} => {
 				for child in children {
 					if let &Statement::Term(TermToken::Break) = child {
-						println!("HERE!!");
 						return Ok(Primitive::LTerm(TermToken::Break));
 					}
 					let result = self.visit(Box::new(child.clone()));
@@ -86,7 +85,6 @@ impl<'a> Interpreter<'a> {
 					Ok(Primitive::Bool(value)) => {
 						if value {
 							let result = self.visit_statement(&if_stmt.conseq);
-							println!("result is {:?}", result);
 							result
 						} else if if_stmt.alt.is_some() {
 							let alt = if_stmt.alt.clone().unwrap();
@@ -98,7 +96,6 @@ impl<'a> Interpreter<'a> {
 					Ok(_) => panic!("expected boolean expression in 'if' statement"),
 					Err(e) => panic!(e)
 				}
-				//Ok(Primitive::Empty)
 			},
 			Statement::While{ref pred, ref conseq} => {
 				let pred_val = self.visit_expr(&pred);
@@ -125,6 +122,13 @@ impl<'a> Interpreter<'a> {
 					},
 					_ => unreachable!()
 				}
+			},
+			Statement::Print(ref expr) => {
+				match self.visit_expr(&expr) {
+					Ok(val) => print!("{}", val),
+					Err(e) => panic!(e),
+				};
+				Ok(Primitive::Empty)
 			},
 			Statement::Expr(ref expr) => self.visit_expr(expr),
 			_ => Ok(Primitive::Empty)
