@@ -192,14 +192,15 @@ pub enum TermToken {
 
 #[derive(Debug, Clone)]
 pub struct List {
-	values: Vec<ListElem>,
+	pub values: Vec<ListElem>,
 	length: usize
 }
 
 #[derive(Debug, Clone)]
 pub enum ListElem {
+	Value(Expression),
 	SubList(List),
-	Value(Expression)
+	Range {start: Expression, end: Expression, step: Option<Expression> }
 }
 
 impl List {
@@ -210,6 +211,16 @@ impl List {
 	pub fn push(&mut self, elem: ListElem) {
 		self.values.push(elem);
 		self.length += 1;
+	}
+
+	pub fn try_push_expr(&mut self, expr: Expression) {
+		match expr {
+			Expression::Empty => panic!("found unexpected expression in array"),
+			_ => {
+				let value = ListElem::Value(expr);
+				self.push(value);
+			}
+		}
 	}
 }
 
