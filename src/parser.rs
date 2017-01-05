@@ -192,9 +192,37 @@ impl<'a> Parser<'a> {
 				let string = self.string();
 				return Expression::Value(Primitive::Str(string));
 			},
-			/*Token::LBrace => {
-
-			},*/
+			Token::LBrace => {
+				self.eat_current();
+				let mut list_stack: Vec<List> = vec![];
+				list_stack.push(List::new());
+				loop {
+					match self.current_token {
+						Some(Token::Comma) => { self.eat_current(); },
+						Some(Token::LBrace) => {
+							list_stack.push(List::new());
+							self.eat_current();
+						},
+						Some(Token::RBrace) => {
+							self.eat_current();
+							if let Some(list) = list_stack.pop() {
+								if let Some(mut lower_list) = list_stack.last_mut() {
+									lower_list.push(ListElem::SubList(list));
+								} else {
+									return Expression::from(list);
+								}
+							} else { unreachable!(); }
+						},
+						Some(_) => {
+							let top = list_stack.last_mut().unwrap();
+							let value = ListElem::Value(self.expr(0));
+							top.push(value);
+						},
+						None => panic!("error, reached none")
+					};
+				}
+				Expression::Empty
+			},
 			Token::LParen => {
 				self.eat(Token::LParen);
 				let expr = self.expr(0);
@@ -240,7 +268,6 @@ impl<'a> Parser<'a> {
 			if precedence >= next_precedence {
 				break;
 			}
-
 			expr = self.infix_expr(expr, next_precedence);
 		}
 		expr

@@ -111,7 +111,7 @@ pub enum Primitive {
 	Bool(bool),
 	Integer(i32),
 	Str(String),
-	Array(Vec<Primitive>),
+	Array(List),
 	LTerm(TermToken),
 	Empty
 }
@@ -183,11 +183,43 @@ impl Div for Primitive {
 	}
 }
 
+/*impl From<Token> for Primitive {
+	fn from(token: Token) -> Primitive {
+		match token {
+			Token::Bool(val) => Primitive::Bool(val),
+			Token::Ident(val) => Primitive::Ident(val),
+			Token::Integer(val) => Primitive::Integer(val),
+			_ => panic!("cannot convert {:?} to primitive", token)
+		}
+	}
+}*/
+
 #[derive(Debug, Clone)]
 pub enum TermToken {
 	Break,
 	Continue,
 	Return { retval: Box<Expression> }
+}
+
+#[derive(Debug, Clone)]
+pub struct List {
+	values: Vec<ListElem>
+}
+
+#[derive(Debug, Clone)]
+pub enum ListElem {
+	SubList(List),
+	Value(Expression)
+}
+
+impl List {
+	pub fn new() -> List {
+		List { values: vec![] }
+	}
+
+	pub fn push(&mut self, elem: ListElem) {
+		self.values.push(elem);
+	}
 }
 
 #[derive(PartialEq)]
@@ -344,5 +376,11 @@ impl Expression {
 		};
 		let bexpr = BinOpExpression { op: op, left: left, right: right };
 		Expression::BinOp(Box::new(bexpr))
+	}
+}
+
+impl From<List> for Expression {
+	fn from(some: List) -> Expression {
+		Expression::Value(Primitive::Array(some))
 	}
 }
