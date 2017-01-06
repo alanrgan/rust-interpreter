@@ -1,6 +1,6 @@
-#![feature(plugin)]
-#![plugin(clippy)]
-#![allow(boxed_local)]
+#![cfg_attr(feature = "clippy", feature(plugin))]
+#![cfg_attr(feature = "clippy", plugin(clippy))]
+#![cfg_attr(feature = "clippy", allow(boxed_local))]
 
 #[macro_use]
 

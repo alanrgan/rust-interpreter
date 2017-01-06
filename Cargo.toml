@@ -3,5 +3,7 @@ name = "interpreter"
 version = "0.1.0"
 authors = ["Alan Gan <alanrgan@gmail.com>"]
 
+features = ["clippy"]
+
 [dependencies]
-clippy = "*"
+clippy = {version = "*", optional = true}
