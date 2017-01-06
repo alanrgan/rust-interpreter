@@ -26,9 +26,7 @@ impl<'a> Parser<'a> {
 	fn eat(&mut self, tok: Token) {
 		if let Some(ref token) = self.current_token.clone() {
 			if Token::equals(token, &tok) {
-				//println!("Eating {:?}", token);
-				self.prev_token = Some(token.clone());
-				self.current_token = self.lexer.next_token();
+				self.eat_current();
 			} else {
 				self.error(tok);
 			}
@@ -203,8 +201,17 @@ impl<'a> Parser<'a> {
 				self.eat(Token::RParen);
 				expr
 			},
-			Token::Ident(..) => { self.variable() },
-			_ => { panic!("found unexpected token") }
+			Token::Ident(..) => { 
+				let var = self.variable();
+				if let Some(Token::LBrace) = self.current_token {
+					self.eat_current();
+					let index = self.expr(0);
+					self.eat(Token::RBrace);
+					return Expression::new_binop(Token::LBrace, var, index);
+				}
+				var
+			},
+			_ => { panic!("found unexpected token {:?}", token) }
 		}
 	}
 

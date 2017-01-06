@@ -1,6 +1,8 @@
 use ast::*;
 use parser::Parser;
 use std::collections::HashMap;
+use std::rc::Rc;
+use std::borrow::Borrow;
 
 pub struct Interpreter<'a> {
 	parser: Parser<'a>,
@@ -42,7 +44,8 @@ impl<'a> Interpreter<'a> {
 					BinOp::LThan => apply_compare(left, right, |first, second| first < second),
 					BinOp::LTEquals => apply_compare(left, right, |first, second| first <= second),
 					BinOp::DEquals => apply_compare(left, right, |first, second| first == second),
-					BinOp::NEquals => apply_compare(left, right, |first, second| first != second)
+					BinOp::NEquals => apply_compare(left, right, |first, second| first != second),
+					BinOp::Brackets => self.visit_brackets(left, right, &bexpr.left)
 				}
 			},
 			Expression::UnaryOp(ref op_expr) => {
@@ -132,6 +135,74 @@ impl<'a> Interpreter<'a> {
 			},
 			Statement::Expr(ref expr) => self.visit_expr(expr),
 			_ => Ok(Primitive::Empty)
+		}
+	}
+
+	// BinOp left: variable, BinOp right: index
+	fn visit_brackets(&mut self, left: Primitive, right: Primitive, varname: &Expression) -> Result<Primitive, String> {
+		match (left, right) {
+			(Primitive::Array(mut list), Primitive::Integer(index)) => {
+				let varname = match varname {
+					&Expression::Variable(ref name) => name,
+					_ => unreachable!()
+				};
+
+				let range_index = index as usize;
+				let index = {
+					if let Some(&ListElem::Range{..}) = list.values.get(0) {
+						0
+					} else { index as usize }
+				};
+				if index >= list.values.len() {
+					panic!("array index {} out of bounds", index);
+				}
+
+				match list.values.get(index) {
+					Some(&ListElem::Value(ref expr)) => {
+						self.visit_expr(&expr)
+					},
+					Some(&ListElem::SubList(ref list)) => {
+						Ok(Primitive::Array(list.clone()))
+					},
+					Some(&ListElem::Range{ref start, ref end, ref step}) => {
+						let start = match self.visit_expr(&start) {
+							Ok(Primitive::Integer(val)) => val,
+							_ => panic!("expected integer value in range expression")
+						};
+						let end = match self.visit_expr(&end) {
+							Ok(Primitive::Integer(val)) => val,
+							_ => panic!("expected integer value in range expression")
+						};
+						let step = match step {
+							&Some(ref step_expr) => {
+								if let Ok(Primitive::Integer(val)) = self.visit_expr(&step_expr) {
+									val as usize
+								} else {
+									panic!("expected integer value as range step")
+								}
+							},
+							&None => 1,
+						};
+						let rng_list = (start..end).enumerate()
+												   .filter(|i| i.0 % step == 0)
+												   .map(|tup| Primitive::Integer(tup.1))
+												   .collect::<Vec<_>>();
+						if !(range_index >= rng_list.len()) {
+							let res = Ok(rng_list.get(range_index).unwrap().clone());
+							let stored_list = self.vmap.get_mut(varname).unwrap();
+							let updated_list = rng_list.into_iter()
+												  .map(|val| ListElem::Value(Expression::Value(val)))
+												  .collect::<Vec<_>>();
+							*stored_list = Primitive::Array(List::from(updated_list));
+							res
+						} else {
+							panic!("array index {} out of bounds", range_index)
+						}
+					},
+					_ => { unreachable!() }
+				}
+			},
+			_ => { Err(String::from("unsupported use of brackets operator")) }
 		}
 	}
 }

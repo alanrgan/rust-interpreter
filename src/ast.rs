@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use std::convert::From;
 use std::ops::{Add, Sub, Mul, Div};
 use std::fmt;
+use std::rc::Rc;
 use interpreter::NodeType;
+use std::cell::RefCell;
 
 pub trait Visitable {
 	fn node_type(&self) -> NodeType;
@@ -74,7 +76,7 @@ impl Token {
 			Token::Plus | Token::Minus | Token::Mult |
 			Token::Div | Token::GThan | Token::LThan |
 			Token::DEquals | Token::LTEquals | Token::GTEquals |
-			Token::NEquals | Token::And | Token::Or => {
+			Token::NEquals | Token::And | Token::Or | Token::LBrace => {
 				true
 			},
 			_ => false,
@@ -83,6 +85,7 @@ impl Token {
 
 	pub fn get_precedence(&self) -> u8 {
 		match *self {
+			Token::LBrace => 5,
 			Token::And | Token::Or => 10,
 			Token::DEquals | Token::NEquals => 20,
 			Token::GThan | Token::LThan |
@@ -224,6 +227,22 @@ impl List {
 	}
 }
 
+impl From<Vec<i32>> for List {
+	fn from(some: Vec<i32>) -> List {
+		let values = some.into_iter().map(|v| ListElem::Value(Expression::Value(Primitive::Integer(v))))
+						.collect::<Vec<_>>();
+		let len = values.len();
+		List {values: values, length: len }
+	}
+}
+
+impl From<Vec<ListElem>> for List {
+	fn from(some: Vec<ListElem>) -> List {
+		let len = some.len();
+		List {values: some, length: len }
+	}
+}
+
 #[derive(PartialEq)]
 pub struct KeywordBank {
 	kwords: HashMap<&'static str, Token>
@@ -313,7 +332,9 @@ pub enum BinOp {
 	GTEquals,
 	LTEquals,
 	DEquals,
-	NEquals
+	NEquals,
+	// special '[]' operator for accessing arrays
+	Brackets
 }
 
 #[derive(Debug, Clone)]
@@ -374,6 +395,7 @@ impl Expression {
 			Token::LTEquals => BinOp::LTEquals,
 			Token::DEquals => BinOp::DEquals,
 			Token::NEquals => BinOp::NEquals,
+			Token::LBrace => BinOp::Brackets,
 			_ => panic!("Invalid BinOp token type: {:?}", t)
 		};
 		let bexpr = BinOpExpression { op: op, left: left, right: right };
