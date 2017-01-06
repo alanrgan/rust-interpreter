@@ -83,15 +83,15 @@ impl<'a> Parser<'a> {
 	fn statement_list(&mut self) -> Statement {
 		let mut nodes: Vec<Statement> = vec![self.statement()];
 		while let Some(ref tok) = self.current_token.clone() {
-			match tok {
-				&Token::Semi => {
+			match *tok {
+				Token::Semi => {
 					self.eat(Token::Semi);
 				},
-				&Token::Comment => {
+				Token::Comment => {
 					self.eat(Token::Comment);
 					// TO COMPLETE
 				},
-				&Token::RCurl => break,
+				Token::RCurl => break,
 				_ => {}
 			}
 			if let Some(Token::RCurl) = self.current_token { break; }
@@ -118,12 +118,9 @@ impl<'a> Parser<'a> {
 		let pred = self.expr(0);
 		let conseq = self.compound_statement();
 		let mut alt = None;
-		match self.current_token {
-			Some(Token::Else) => {
-				self.eat(Token::Else);
-				alt = Some(self.compound_statement());
-			},
-			_ => {}
+		if let Some(Token::Else) = self.current_token {
+			self.eat(Token::Else);
+			alt = Some(self.compound_statement());
 		}
 		Statement::If(Box::new(IfStatement::new(pred, conseq, alt)))
 	}
@@ -239,13 +236,10 @@ impl<'a> Parser<'a> {
 					let mut sublist = List::new();
 					// we are either parsing a range or a sublist
 					let elem = self.try_parse_range();
-					match elem {
-						ListElem::Range{..} => {
-							if let Some(Token::RBrace) = self.current_token {}
-							else { panic!("unexpected token"); }
-						},
-						_ => {}
-					};
+					if let ListElem::Range{..} = elem {
+						if let Some(Token::RBrace) = self.current_token {}
+						else { panic!("unexpected token"); }
+					}
 					sublist.push(elem);
 					list_stack.push(sublist);
 				},
@@ -276,13 +270,10 @@ impl<'a> Parser<'a> {
 				self.eat_current();
 				let end = self.factor();
 				let mut step = None;
-				match self.current_token {
-					Some(Token::Semi) => {
-						self.eat_current();
-						step = Some(self.factor());
-					},
-					_ => {}
-				};
+				if let Some(Token::Semi) = self.current_token {
+					self.eat_current();
+					step = Some(self.factor());
+				}
 				//self.eat(Token::RBrace);
 				ListElem::Range{start: factor, end: end, step: step }
 			},

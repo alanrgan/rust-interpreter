@@ -70,7 +70,7 @@ impl<'a> Interpreter<'a> {
 		match *statement {
 			Statement::Compound{ref children} => {
 				for child in children {
-					if let &Statement::Term(TermToken::Break) = child {
+					if let Statement::Term(TermToken::Break) = *child {
 						return Ok(Primitive::LTerm(TermToken::Break));
 					}
 					let result = self.visit(Box::new(child.clone()));
@@ -85,8 +85,7 @@ impl<'a> Interpreter<'a> {
 				match self.visit_expr(&if_stmt.pred) {
 					Ok(Primitive::Bool(value)) => {
 						if value {
-							let result = self.visit_statement(&if_stmt.conseq);
-							result
+							self.visit_statement(&if_stmt.conseq)
 						} else if if_stmt.alt.is_some() {
 							let alt = if_stmt.alt.clone().unwrap();
 							self.visit_statement(&alt)
@@ -99,13 +98,12 @@ impl<'a> Interpreter<'a> {
 				}
 			},
 			Statement::While{ref pred, ref conseq} => {
-				let pred_val = self.visit_expr(&pred);
-				while let Ok(Primitive::Bool(value)) = self.visit_expr(&pred) {
+				let pred_val = self.visit_expr(pred);
+				while let Ok(Primitive::Bool(value)) = self.visit_expr(pred) {
 					if value {
-						match self.visit_statement(conseq) {
-							Ok(Primitive::LTerm(TermToken::Break)) => break,
-							_ => {}
-						}; 
+						if let Ok(Primitive::LTerm(TermToken::Break)) = self.visit_statement(conseq) {
+							break;
+						}
 					}
 					else { break; }
 				}
@@ -125,7 +123,7 @@ impl<'a> Interpreter<'a> {
 				}
 			},
 			Statement::Print(ref expr) => {
-				match self.visit_expr(&expr) {
+				match self.visit_expr(expr) {
 					Ok(val) => print!("{}", val),
 					Err(e) => panic!(e),
 				};
@@ -141,8 +139,8 @@ impl<'a> Interpreter<'a> {
 		match (left, right) {
 			(Primitive::Array(list), Primitive::Integer(index)) => {
 				// destructure varname into a String
-				let varname = match varname {
-					&Expression::Variable(ref name) => name,
+				let varname = match *varname {
+					Expression::Variable(ref name) => name,
 					_ => unreachable!()
 				};
 
@@ -163,30 +161,30 @@ impl<'a> Interpreter<'a> {
 				// into a primitive
 				match list.values.get(index) {
 					Some(&ListElem::Value(ref expr)) => {
-						self.visit_expr(&expr)
+						self.visit_expr(expr)
 					},
 					Some(&ListElem::SubList(ref list)) => {
 						Ok(Primitive::Array(list.clone()))
 					},
 					Some(&ListElem::Range{ref start, ref end, ref step}) => {
 						// evaluate start, end and step expressions
-						let start = match self.visit_expr(&start) {
+						let start = match self.visit_expr(start) {
 							Ok(Primitive::Integer(val)) => val,
 							_ => panic!("expected integer value in range expression")
 						};
-						let end = match self.visit_expr(&end) {
+						let end = match self.visit_expr(end) {
 							Ok(Primitive::Integer(val)) => val,
 							_ => panic!("expected integer value in range expression")
 						};
-						let step = match step {
-							&Some(ref step_expr) => {
-								if let Ok(Primitive::Integer(val)) = self.visit_expr(&step_expr) {
+						let step = match *step {
+							Some(ref step_expr) => {
+								if let Ok(Primitive::Integer(val)) = self.visit_expr(step_expr) {
 									val as usize
 								} else {
 									panic!("expected integer value as range step")
 								}
 							},
-							&None => 1,
+							None => 1,
 						};
 
 						// convert range into a vector of Primitives
@@ -197,7 +195,7 @@ impl<'a> Interpreter<'a> {
 
 						// check if requested index is valid within the range
 						if !(range_index >= rng_list.len()) {
-							let res = Ok(rng_list.get(range_index).unwrap().clone());
+							let res = Ok(rng_list[range_index].clone());
 							// convert range into a list for performance
 							// this should never happen more than once per range.
 							// ranges are expanded upon first evaluation

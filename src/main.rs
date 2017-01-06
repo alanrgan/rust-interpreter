@@ -1,3 +1,7 @@
+#![feature(plugin)]
+#![plugin(clippy)]
+#![allow(boxed_local)]
+
 #[macro_use]
 
 mod lib;

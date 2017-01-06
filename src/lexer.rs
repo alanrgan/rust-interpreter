@@ -9,7 +9,7 @@ pub struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
-	pub fn new(text: &String) -> Lexer {
+	pub fn new(text: &str) -> Lexer {
 		Lexer {
 			iter: text.chars().peekable(),
 			keywords: KeywordBank::new()

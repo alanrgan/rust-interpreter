@@ -62,8 +62,8 @@ pub enum Token {
 impl Token {
 	pub fn equals(a: &Token, b: &Token) -> bool {
 		match (a.clone(), b.clone()) {
-			(Token::Integer(..), Token::Integer(..)) => true,
-			(Token::Bool(..), Token::Bool(..)) => true,
+			(Token::Integer(..), Token::Integer(..)) |
+			(Token::Bool(..), Token::Bool(..)) |
 			(Token::Ident(..), Token::Ident(..)) => true,
 			_ => { a == b }
 		}
