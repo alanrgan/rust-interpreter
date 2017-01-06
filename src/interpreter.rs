@@ -150,7 +150,7 @@ impl<'a> Interpreter<'a> {
 				let range_index = index as usize;
 				let index = {
 					if let Some(&ListElem::Range{..}) = list.values.get(0) {
-						0
+						0ss
 					} else { index as usize }
 				};
 				if index >= list.values.len() {
