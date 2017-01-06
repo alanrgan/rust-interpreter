@@ -1,11 +1,9 @@
-#[macro_use]
 use std::collections::HashMap;
 use std::convert::From;
 use std::ops::{Add, Sub, Mul, Div};
 use std::fmt;
-use std::rc::Rc;
 use interpreter::NodeType;
-use std::cell::RefCell;
+
 
 pub trait Visitable {
 	fn node_type(&self) -> NodeType;
@@ -214,16 +212,6 @@ impl List {
 	pub fn push(&mut self, elem: ListElem) {
 		self.values.push(elem);
 		self.length += 1;
-	}
-
-	pub fn try_push_expr(&mut self, expr: Expression) {
-		match expr {
-			Expression::Empty => panic!("found unexpected expression in array"),
-			_ => {
-				let value = ListElem::Value(expr);
-				self.push(value);
-			}
-		}
 	}
 }
 

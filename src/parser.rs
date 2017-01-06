@@ -264,7 +264,6 @@ impl<'a> Parser<'a> {
 				_ => { panic!("Unexpected token {:?}", self.current_token); }
 			};
 		}
-		Expression::Empty
 	}
 
 	// returns ListElem::Range if range is parsed,

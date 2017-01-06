@@ -1,8 +1,6 @@
 use ast::*;
 use parser::Parser;
 use std::collections::HashMap;
-use std::rc::Rc;
-use std::borrow::Borrow;
 
 pub struct Interpreter<'a> {
 	parser: Parser<'a>,
@@ -141,12 +139,16 @@ impl<'a> Interpreter<'a> {
 	// BinOp left: variable, BinOp right: index
 	fn visit_brackets(&mut self, left: Primitive, right: Primitive, varname: &Expression) -> Result<Primitive, String> {
 		match (left, right) {
-			(Primitive::Array(mut list), Primitive::Integer(index)) => {
+			(Primitive::Array(list), Primitive::Integer(index)) => {
+				// destructure varname into a String
 				let varname = match varname {
 					&Expression::Variable(ref name) => name,
 					_ => unreachable!()
 				};
 
+				// validity of index is bracket depends on if the array represents a list or a range
+				// ranges are represented as length-1 lists, but should be allowed to be accessed
+				// based on its expanded value
 				let range_index = index as usize;
 				let index = {
 					if let Some(&ListElem::Range{..}) = list.values.get(0) {
@@ -157,6 +159,8 @@ impl<'a> Interpreter<'a> {
 					panic!("array index {} out of bounds", index);
 				}
 
+				// once the value is fetched from the array, determine how to convert
+				// into a primitive
 				match list.values.get(index) {
 					Some(&ListElem::Value(ref expr)) => {
 						self.visit_expr(&expr)
@@ -165,6 +169,7 @@ impl<'a> Interpreter<'a> {
 						Ok(Primitive::Array(list.clone()))
 					},
 					Some(&ListElem::Range{ref start, ref end, ref step}) => {
+						// evaluate start, end and step expressions
 						let start = match self.visit_expr(&start) {
 							Ok(Primitive::Integer(val)) => val,
 							_ => panic!("expected integer value in range expression")
@@ -183,12 +188,19 @@ impl<'a> Interpreter<'a> {
 							},
 							&None => 1,
 						};
+
+						// convert range into a vector of Primitives
 						let rng_list = (start..end).enumerate()
 												   .filter(|i| i.0 % step == 0)
 												   .map(|tup| Primitive::Integer(tup.1))
 												   .collect::<Vec<_>>();
+
+						// check if requested index is valid within the range
 						if !(range_index >= rng_list.len()) {
 							let res = Ok(rng_list.get(range_index).unwrap().clone());
+							// convert range into a list for performance
+							// this should never happen more than once per range.
+							// ranges are expanded upon first evaluation
 							let stored_list = self.vmap.get_mut(varname).unwrap();
 							let updated_list = rng_list.into_iter()
 												  .map(|val| ListElem::Value(Expression::Value(val)))

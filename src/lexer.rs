@@ -4,7 +4,6 @@ use std::iter::Peekable;
 use ast::{Token, KeywordBank};
 
 pub struct Lexer<'a> {
-	text: String,
 	pub iter: Peekable<Chars<'a>>,
 	keywords: KeywordBank
 }
@@ -12,7 +11,6 @@ pub struct Lexer<'a> {
 impl<'a> Lexer<'a> {
 	pub fn new(text: &String) -> Lexer {
 		Lexer {
-			text: text.clone(),
 			iter: text.chars().peekable(),
 			keywords: KeywordBank::new()
 		}
