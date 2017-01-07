@@ -4,7 +4,6 @@ use std::ops::{Add, Sub, Mul, Div};
 use std::fmt;
 use interpreter::NodeType;
 
-
 pub trait Visitable {
 	fn node_type(&self) -> NodeType;
 	fn as_statement(self: Box<Self>) -> Option<Statement>;
@@ -321,8 +320,6 @@ pub enum BinOp {
 	LTEquals,
 	DEquals,
 	NEquals,
-	// special '[]' operator for accessing arrays
-	Brackets
 }
 
 #[derive(Debug, Clone)]
@@ -330,6 +327,22 @@ pub struct BinOpExpression {
 	pub op: BinOp,
 	pub left: Expression,
 	pub right: Expression
+}
+
+#[derive(Debug, Clone)]
+pub struct BrackOpExpression {
+	pub base_vname: String,
+	pub left: Expression,
+	pub right: Expression,
+	pub depth: usize
+}
+
+impl BrackOpExpression {
+	pub fn new(vname: String, left: Expression,
+			   right: Expression, depth: usize) 
+			   -> BrackOpExpression {
+		BrackOpExpression { base_vname: vname, left: left, right: right, depth: depth }
+   }
 }
 
 #[derive(Debug, Clone)]
@@ -362,6 +375,7 @@ impl UnaryOpExpression {
 #[derive(Debug, Clone)]
 pub enum Expression {
 	BinOp(Box<BinOpExpression>),
+	BrackOp(Box<BrackOpExpression>),
 	Value(Primitive),
 	Variable(String),
 	Empty,
@@ -383,7 +397,6 @@ impl Expression {
 			Token::LTEquals => BinOp::LTEquals,
 			Token::DEquals => BinOp::DEquals,
 			Token::NEquals => BinOp::NEquals,
-			Token::LBrace => BinOp::Brackets,
 			_ => panic!("Invalid BinOp token type: {:?}", t)
 		};
 		let bexpr = BinOpExpression { op: op, left: left, right: right };

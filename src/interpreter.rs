@@ -1,6 +1,6 @@
 use ast::*;
 use parser::Parser;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 pub struct Interpreter<'a> {
 	parser: Parser<'a>,
@@ -43,8 +43,10 @@ impl<'a> Interpreter<'a> {
 					BinOp::LTEquals => apply_compare(left, right, |first, second| first <= second),
 					BinOp::DEquals => apply_compare(left, right, |first, second| first == second),
 					BinOp::NEquals => apply_compare(left, right, |first, second| first != second),
-					BinOp::Brackets => self.visit_brackets(left, right, &bexpr.left)
 				}
+			},
+			Expression::BrackOp(ref brackop) => {
+				self.visit_brackets(brackop, &mut VecDeque::new())
 			},
 			Expression::UnaryOp(ref op_expr) => {
 				let val = self.visit_expr(&op_expr.val);
@@ -70,6 +72,7 @@ impl<'a> Interpreter<'a> {
 		match *statement {
 			Statement::Compound{ref children} => {
 				for child in children {
+					//println!("{:?}\n", child);
 					if let Statement::Term(TermToken::Break) = *child {
 						return Ok(Primitive::LTerm(TermToken::Break));
 					}
@@ -77,7 +80,6 @@ impl<'a> Interpreter<'a> {
 					if let Ok(Primitive::LTerm(TermToken::Break)) = result {
 						return result;
 					}
-					//println!("{}", result);
 				}
 				Ok(Primitive::Empty)
 			},
@@ -135,14 +137,20 @@ impl<'a> Interpreter<'a> {
 	}
 
 	// BinOp left: variable, BinOp right: index
-	fn visit_brackets(&mut self, left: Primitive, right: Primitive, varname: &Expression) -> Result<Primitive, String> {
+	fn visit_brackets(&mut self, expr: &BrackOpExpression, index_queue: &mut VecDeque<usize>)
+					  -> Result<Primitive, String> {
+		let left = {
+			if let Expression::BrackOp(ref brackop) = expr.left {
+				self.visit_brackets(brackop, index_queue).unwrap()
+			} else {
+				self.visit_expr(&expr.left).unwrap()
+			}
+		};
+		let right = self.visit_expr(&expr.right).unwrap();
 		match (left, right) {
 			(Primitive::Array(list), Primitive::Integer(index)) => {
 				// destructure varname into a String
-				let varname = match *varname {
-					Expression::Variable(ref name) => name,
-					_ => unreachable!()
-				};
+				let varname = expr.base_vname.clone();
 
 				// validity of index is bracket depends on if the array represents a list or a range
 				// ranges are represented as length-1 lists, but should be allowed to be accessed
@@ -150,23 +158,29 @@ impl<'a> Interpreter<'a> {
 				let range_index = index as usize;
 				let index = {
 					if let Some(&ListElem::Range{..}) = list.values.get(0) {
-						0ss
-					} else { index as usize }
+						0
+					} else {
+						index_queue.push_back(index as usize);
+						index as usize
+					}
 				};
+
 				if index >= list.values.len() {
 					panic!("array index {} out of bounds", index);
 				}
 
+				let list_elem = &list.values[index];
+
 				// once the value is fetched from the array, determine how to convert
 				// into a primitive
-				match list.values.get(index) {
-					Some(&ListElem::Value(ref expr)) => {
+				match *list_elem {
+					ListElem::Value(ref expr) => {
 						self.visit_expr(expr)
 					},
-					Some(&ListElem::SubList(ref list)) => {
+					ListElem::SubList(ref list) => {
 						Ok(Primitive::Array(list.clone()))
 					},
-					Some(&ListElem::Range{ref start, ref end, ref step}) => {
+					ListElem::Range{ref start, ref end, ref step} => {
 						// evaluate start, end and step expressions
 						let start = match self.visit_expr(start) {
 							Ok(Primitive::Integer(val)) => val,
@@ -199,20 +213,46 @@ impl<'a> Interpreter<'a> {
 							// convert range into a list for performance
 							// this should never happen more than once per range.
 							// ranges are expanded upon first evaluation
-							let stored_list = self.vmap.get_mut(varname).unwrap();
 							let updated_list = rng_list.into_iter()
 												  .map(|val| ListElem::Value(Expression::Value(val)))
 												  .collect::<Vec<_>>();
-							*stored_list = Primitive::Array(List::from(updated_list));
+							{
+								let new_list = ListElem::SubList(List::from(updated_list.clone()));
+								let stored_list = self.vmap.get_mut(&varname).unwrap();
+								List::expand_range(stored_list, new_list, index_queue);
+							}
+
+							// remove all temporary arrays from hashmap
+							let hmap: HashMap<String, Primitive> = self.vmap.clone().into_iter()
+												    .filter(|&(ref k, _)| !k.starts_with("%tmparr"))
+												    .collect();
+							self.vmap = hmap;
 							res
 						} else {
 							panic!("array index {} out of bounds", range_index)
 						}
 					},
-					_ => { unreachable!() }
 				}
 			},
 			_ => { Err(String::from("unsupported use of brackets operator")) }
+		}
+	}
+}
+
+impl List {
+	pub fn expand_range(nested_arr: &mut Primitive, range: ListElem, indices: &VecDeque<usize>) {
+		// follow all the values in the indices vector
+		if let Primitive::Array(ref mut list) = *nested_arr {
+			let mut values = &mut list.values;
+			List::expand(values, range, indices, 0);
+		}
+	}
+
+	fn expand(some_vec: &mut Vec<ListElem>, range: ListElem, indices: &VecDeque<usize>, ind: usize) {
+		if ind == indices.len()-1 {
+			some_vec[indices[ind]] = range;
+		} else if let ListElem::SubList(ref mut sublist) = some_vec[indices[ind]] {
+			List::expand(&mut sublist.values, range, indices, ind+1);
 		}
 	}
 }

@@ -198,18 +198,38 @@ impl<'a> Parser<'a> {
 				self.eat(Token::RParen);
 				expr
 			},
-			Token::Ident(..) => { 
+			Token::Ident(vname) => { 
 				let var = self.variable();
-				if let Some(Token::LBrace) = self.current_token {
+				if let Some(expr) = self.parse_brackets(&var, vname, 0) {
+					return expr;
+				}
+				/*if let Some(Token::LBrace) = self.current_token {
 					self.eat_current();
 					let index = self.expr(0);
 					self.eat(Token::RBrace);
 					return Expression::new_binop(Token::LBrace, var, index);
-				}
+				}*/
 				var
 			},
 			_ => { panic!("found unexpected token {:?}", token) }
 		}
+	}
+
+	fn parse_brackets(&mut self, left: &Expression, vname: String, depth: usize) -> Option<Expression> {
+		if let Some(Token::LBrace) = self.current_token {
+			self.eat_current();
+			let index = self.expr(0);
+			self.eat(Token::RBrace);
+			let binop = Expression::BrackOp(Box::new(
+				BrackOpExpression::new(vname.clone(), left.clone(), index, depth)
+			));
+			if let Some(expr) = self.parse_brackets(&binop, vname, depth+1) {
+				return Some(expr);
+			} else {
+				return Some(binop);
+			}
+		}
+		None
 	}
 
 	fn array(&mut self) -> Expression {
@@ -225,7 +245,7 @@ impl<'a> Parser<'a> {
 						if let Some(mut lower_list) = list_stack.last_mut() {
 							lower_list.push(ListElem::SubList(list));
 						} else {
-							//println!("returning here");
+							//println!("returning here"); 
 							return Expression::from(list);
 						}
 					} else { unreachable!(); }
