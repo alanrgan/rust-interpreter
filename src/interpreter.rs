@@ -244,7 +244,6 @@ impl List {
 	}
 
 	fn expand(some_vec: &mut Vec<ListElem>, range: ListElem, indices: &VecDeque<usize>, ind: usize) {
-		println!("indices len is {}", indices.len());
 		if indices.len() == 0 { return; }
 		if ind == indices.len()-1 {
 			some_vec[indices[ind]] = range;
