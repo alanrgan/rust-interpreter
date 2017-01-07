@@ -222,11 +222,6 @@ impl<'a> Interpreter<'a> {
 								List::expand_range(stored_list, new_list, index_queue);
 							}
 
-							// remove all temporary arrays from hashmap
-							let hmap: HashMap<String, Primitive> = self.vmap.clone().into_iter()
-												    .filter(|&(ref k, _)| !k.starts_with("%tmparr"))
-												    .collect();
-							self.vmap = hmap;
 							res
 						} else {
 							panic!("array index {} out of bounds", range_index)
