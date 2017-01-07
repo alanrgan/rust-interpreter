@@ -1,6 +1,7 @@
 use ast::*;
 use parser::Parser;
 use std::collections::{HashMap, VecDeque};
+use std::mem;
 
 pub struct Interpreter<'a> {
 	parser: Parser<'a>,
@@ -182,11 +183,11 @@ impl<'a> Interpreter<'a> {
 					},
 					ListElem::Range{ref start, ref end, ref step} => {
 						// evaluate start, end and step expressions
-						let start = match self.visit_expr(start) {
+						let mut start = match self.visit_expr(start) {
 							Ok(Primitive::Integer(val)) => val,
 							_ => panic!("expected integer value in range expression")
 						};
-						let end = match self.visit_expr(end) {
+						let mut end = match self.visit_expr(end) {
 							Ok(Primitive::Integer(val)) => val,
 							_ => panic!("expected integer value in range expression")
 						};
@@ -201,11 +202,18 @@ impl<'a> Interpreter<'a> {
 							None => 1,
 						};
 
+						let range: Box<Iterator<Item = i32>> = {
+							if start > end { 
+								Box::new((end..start+1).rev())
+							}
+							else { Box::new(start..end) }
+						};
+
 						// convert range into a vector of Primitives
-						let rng_list = (start..end).enumerate()
-												   .filter(|i| i.0 % step == 0)
-												   .map(|tup| Primitive::Integer(tup.1))
-												   .collect::<Vec<_>>();
+						let rng_list = range.enumerate()
+											.filter(|i| i.0 % step == 0)
+											.map(|tup| Primitive::Integer(tup.1))
+											.collect::<Vec<_>>();
 
 						// check if requested index is valid within the range
 						if !(range_index >= rng_list.len()) {
