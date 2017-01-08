@@ -1,3 +1,5 @@
 target
 src/inputs
 Cargo.lock
+doc
+src/tests

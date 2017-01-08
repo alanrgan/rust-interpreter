@@ -1,7 +1,6 @@
 use ast::*;
 use parser::Parser;
 use std::collections::{HashMap, VecDeque};
-use std::mem;
 
 pub struct Interpreter<'a> {
 	parser: Parser<'a>,
@@ -181,13 +180,14 @@ impl<'a> Interpreter<'a> {
 					ListElem::SubList(ref list) => {
 						Ok(Primitive::Array(list.clone()))
 					},
+					// semi-lazy evaluation of range expressions
 					ListElem::Range{ref start, ref end, ref step} => {
 						// evaluate start, end and step expressions
-						let mut start = match self.visit_expr(start) {
+						let start = match self.visit_expr(start) {
 							Ok(Primitive::Integer(val)) => val,
 							_ => panic!("expected integer value in range expression")
 						};
-						let mut end = match self.visit_expr(end) {
+						let end = match self.visit_expr(end) {
 							Ok(Primitive::Integer(val)) => val,
 							_ => panic!("expected integer value in range expression")
 						};
@@ -227,7 +227,9 @@ impl<'a> Interpreter<'a> {
 							{
 								let new_list = ListElem::SubList(List::from(updated_list.clone()));
 								let stored_list = self.vmap.get_mut(&varname).unwrap();
-								List::expand_range(stored_list, new_list, index_queue);
+								if let Some(vec_elem) = List::get_mut_at(stored_list, index_queue) {
+									*vec_elem = new_list;
+								}
 							}
 
 							res
@@ -243,21 +245,27 @@ impl<'a> Interpreter<'a> {
 }
 
 impl List {
-	pub fn expand_range(nested_arr: &mut Primitive, range: ListElem, indices: &VecDeque<usize>) {
+	pub fn get_mut_at<'a>(nested_arr: &'a mut Primitive, 
+						  indices: &VecDeque<usize>) -> Option<&'a mut ListElem> {
 		// follow all the values in the indices vector
 		if let Primitive::Array(ref mut list) = *nested_arr {
 			let mut values = &mut list.values;
-			List::expand(values, range, indices, 0);
+			return List::get_mut_helper(values, indices, 0);
 		}
+		None
 	}
 
-	fn expand(some_vec: &mut Vec<ListElem>, range: ListElem, indices: &VecDeque<usize>, ind: usize) {
-		if indices.len() == 0 { return; }
+	fn get_mut_helper<'a>(some_vec: &'a mut Vec<ListElem>,
+						  indices: &VecDeque<usize>, ind: usize) -> Option<&'a mut ListElem> {
+		// empty indices array represents the "range at depth 0" or non-nested range case
+		// e.g "a = [0..5]"
+		if indices.is_empty() { return some_vec.get_mut(0); }
 		if ind == indices.len()-1 {
-			some_vec[indices[ind]] = range;
+			return some_vec.get_mut(indices[ind]);
 		} else if let ListElem::SubList(ref mut sublist) = some_vec[indices[ind]] {
-			List::expand(&mut sublist.values, range, indices, ind+1);
+			return List::get_mut_helper(&mut sublist.values, indices, ind+1);
 		}
+		None
 	}
 }
 
