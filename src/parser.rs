@@ -203,12 +203,6 @@ impl<'a> Parser<'a> {
 				if let Some(expr) = self.parse_brackets(&var, vname, 0) {
 					return expr;
 				}
-				/*if let Some(Token::LBrace) = self.current_token {
-					self.eat_current();
-					let index = self.expr(0);
-					self.eat(Token::RBrace);
-					return Expression::new_binop(Token::LBrace, var, index);
-				}*/
 				var
 			},
 			_ => { panic!("found unexpected token {:?}", token) }

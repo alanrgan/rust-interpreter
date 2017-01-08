@@ -121,6 +121,11 @@ impl<'a> Interpreter<'a> {
 						self.vmap.insert(vname.clone(), val.clone());
 						Ok(val)
 					},
+					// eventually handle assigning to brackopexpression
+					/*
+					(&Expression::BrackOpExpression(..), _) => {
+					},
+					*/
 					_ => unreachable!()
 				}
 			},
@@ -136,7 +141,9 @@ impl<'a> Interpreter<'a> {
 		}
 	}
 
-	// BinOp left: variable, BinOp right: index
+	// EVENTUALLY have this function be 'follow_brackets' and return a mutable reference
+	// to the stored Primitive in the symbol table
+	// i.e. visit_brackets(&mut self, expr: &BrackOpExpression) -> Result<&mut Primitive, String>
 	fn visit_brackets(&mut self, expr: &BrackOpExpression, index_queue: &mut VecDeque<usize>)
 					  -> Result<Primitive, String> {
 		let left = {
@@ -159,15 +166,14 @@ impl<'a> Interpreter<'a> {
 				let index = {
 					if let Some(&ListElem::Range{..}) = list.values.get(0) {
 						0
-					} else {
-						index_queue.push_back(index as usize);
-						index as usize
-					}
+					} else { index as usize }
 				};
 
 				if index >= list.values.len() {
 					panic!("array index {} out of bounds", index);
 				}
+
+				index_queue.push_back(index);
 
 				let list_elem = &list.values[index];
 
@@ -182,56 +188,24 @@ impl<'a> Interpreter<'a> {
 					},
 					// semi-lazy evaluation of range expressions
 					ListElem::Range{ref start, ref end, ref step} => {
-						// evaluate start, end and step expressions
-						let start = match self.visit_expr(start) {
-							Ok(Primitive::Integer(val)) => val,
-							_ => panic!("expected integer value in range expression")
-						};
-						let end = match self.visit_expr(end) {
-							Ok(Primitive::Integer(val)) => val,
-							_ => panic!("expected integer value in range expression")
-						};
-						let step = match *step {
-							Some(ref step_expr) => {
-								if let Ok(Primitive::Integer(val)) = self.visit_expr(step_expr) {
-									val as usize
-								} else {
-									panic!("expected integer value as range step")
-								}
-							},
-							None => 1,
-						};
+						// TODO: convert the following to a separate function 
+						// given a mutable reference to the range to expand,
+						// replace it with the appropriate expanded range
+						// fn expand_range(&mut ListElem)
+						// that way, in List::set() won't have to traverse through nested
+						// structure more than once (get mut reference, expand if necessary),
+						// then set
 
-						let range: Box<Iterator<Item = i32>> = {
-							if start > end { 
-								Box::new((end..start+1).rev())
-							}
-							else { Box::new(start..end) }
-						};
-
-						// convert range into a vector of Primitives
-						let rng_list = range.enumerate()
-											.filter(|i| i.0 % step == 0)
-											.map(|tup| Primitive::Integer(tup.1))
-											.collect::<Vec<_>>();
-
-						// check if requested index is valid within the range
+						let rng_list = self.expand_range(start, end, step, index_queue);
 						if !(range_index >= rng_list.len()) {
 							let res = Ok(rng_list[range_index].clone());
-							// convert range into a list for performance
-							// this should never happen more than once per range.
-							// ranges are expanded upon first evaluation
 							let updated_list = rng_list.into_iter()
-												  .map(|val| ListElem::Value(Expression::Value(val)))
-												  .collect::<Vec<_>>();
-							{
-								let new_list = ListElem::SubList(List::from(updated_list.clone()));
-								let stored_list = self.vmap.get_mut(&varname).unwrap();
-								if let Some(vec_elem) = List::get_mut_at(stored_list, index_queue) {
-									*vec_elem = new_list;
-								}
+											   .map(|val| ListElem::Value(Expression::Value(val)))
+											   .collect::<Vec<_>>();
+							let stored_list = self.vmap.get_mut(&varname).unwrap();
+							if let Some(vec_elem) = List::get_mut_at(stored_list, index_queue) {
+								*vec_elem = ListElem::SubList(List::from(updated_list));
 							}
-
 							res
 						} else {
 							panic!("array index {} out of bounds", range_index)
@@ -241,6 +215,42 @@ impl<'a> Interpreter<'a> {
 			},
 			_ => { Err(String::from("unsupported use of brackets operator")) }
 		}
+	}
+
+	fn expand_range(&mut self, start: &Expression, end: &Expression,
+				    step: &Option<Expression>, index_queue: &VecDeque<usize>) -> Vec<Primitive> {
+		let start = match self.visit_expr(start) {
+			Ok(Primitive::Integer(val)) => val,
+			_ => panic!("expected integer value in range expression")
+		};
+		let end = match self.visit_expr(end) {
+			Ok(Primitive::Integer(val)) => val,
+			_ => panic!("expected integer value in range expression")
+		};
+		let step = match *step {
+			Some(ref step_expr) => {
+				if let Ok(Primitive::Integer(val)) = self.visit_expr(step_expr) {
+					val as usize
+				} else {
+					panic!("expected integer value as range step")
+				}
+			},
+			None => 1,
+		};
+
+		let range: Box<Iterator<Item = i32>> = {
+			if start > end { 
+				Box::new((end..start+1).rev())
+			}
+			else { Box::new(start..end) }
+		};
+
+		// convert range into a vector of Primitives
+		let rng_list = range.enumerate()
+							.filter(|i| i.0 % step == 0)
+							.map(|tup| Primitive::Integer(tup.1))
+							.collect::<Vec<_>>();
+		rng_list
 	}
 }
 
@@ -257,9 +267,7 @@ impl List {
 
 	fn get_mut_helper<'a>(some_vec: &'a mut Vec<ListElem>,
 						  indices: &VecDeque<usize>, ind: usize) -> Option<&'a mut ListElem> {
-		// empty indices array represents the "range at depth 0" or non-nested range case
-		// e.g "a = [0..5]"
-		if indices.is_empty() { return some_vec.get_mut(0); }
+		if indices.is_empty() { return None; }
 		if ind == indices.len()-1 {
 			return some_vec.get_mut(indices[ind]);
 		} else if let ListElem::SubList(ref mut sublist) = some_vec[indices[ind]] {
