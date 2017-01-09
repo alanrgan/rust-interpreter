@@ -39,5 +39,9 @@ fn main() {
 	let parser = Parser::new(lex);
 	let mut interpreter = Interpreter::new(parser);
 	interpreter.interpret();
-	println!("{:?}", interpreter.vmap);
+	let mut a = interpreter.vmap
+			.iter().collect::<Vec<_>>();
+	a.sort_by_key(|elem| elem.0);
+
+	println!("{:?}", a);
 }

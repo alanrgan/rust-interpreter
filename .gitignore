@@ -3,3 +3,4 @@ src/inputs
 Cargo.lock
 doc
 src/tests
+src/Makefile

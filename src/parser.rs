@@ -277,7 +277,7 @@ impl<'a> Parser<'a> {
 	// returns ListElem::Range if range is parsed,
 	// otherwise returns some other ListElem
 	fn try_parse_range(&mut self) -> ListElem {
-		let factor = self.factor();
+		let factor = self.expr(0);//self.factor();
 		// check if the token is now DotRange('..') or otherwise
 		match self.current_token {
 			Some(Token::DotRange) => {

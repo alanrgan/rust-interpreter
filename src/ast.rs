@@ -230,6 +230,16 @@ impl From<Vec<ListElem>> for List {
 	}
 }
 
+impl From<Primitive> for ListElem {
+	fn from(some: Primitive) -> ListElem {
+		if let Primitive::Array(list) = some {
+			ListElem::SubList(list)
+		} else {
+			ListElem::Value(Expression::Value(some))
+		}
+	}
+}
+
 #[derive(PartialEq)]
 pub struct KeywordBank {
 	kwords: HashMap<&'static str, Token>
