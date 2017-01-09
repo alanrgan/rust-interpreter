@@ -200,7 +200,7 @@ impl<'a> Parser<'a> {
 			},
 			Token::Ident(vname) => { 
 				let var = self.variable();
-				if let Some(expr) = self.parse_brackets(&var, vname, 0) {
+				if let Some(expr) = self.parse_brackets(vname) {
 					return expr;
 				}
 				var
@@ -209,21 +209,19 @@ impl<'a> Parser<'a> {
 		}
 	}
 
-	fn parse_brackets(&mut self, left: &Expression, vname: String, depth: usize) -> Option<Expression> {
+	fn parse_brackets(&mut self, var: String) -> Option<Expression> {
 		if let Some(Token::LBrace) = self.current_token {
-			self.eat_current();
-			let index = self.expr(0);
-			self.eat(Token::RBrace);
-			let binop = Expression::BrackOp(Box::new(
-				BrackOpExpression::new(vname.clone(), left.clone(), index, depth)
-			));
-			if let Some(expr) = self.parse_brackets(&binop, vname, depth+1) {
-				return Some(expr);
-			} else {
-				return Some(binop);
+			let mut brackop = BrackOpExpression::new(var);
+			while let Some(Token::LBrace) = self.current_token {
+				self.eat_current();
+				let index = self.expr(0);
+				self.eat(Token::RBrace);
+				brackop.indices.push(index);
 			}
+			Some(Expression::BrackOp(Box::new(brackop)))
+		} else {
+			None
 		}
-		None
 	}
 
 	fn array(&mut self) -> Expression {
@@ -239,26 +237,28 @@ impl<'a> Parser<'a> {
 						if let Some(mut lower_list) = list_stack.last_mut() {
 							lower_list.push(ListElem::SubList(list));
 						} else {
-							//println!("returning here"); 
 							return Expression::from(list);
 						}
 					} else { unreachable!(); }
 				},
 				Some(Token::LBrace) => {
-					self.eat_current();
-					// create a new sublist
-					let mut sublist = List::new();
 					// we are either parsing a range or a sublist
+					// allow nested sublists
+					while let Some(Token::LBrace) = self.current_token {
+						self.eat_current();
+						// create a new sublist
+						let sublist = List::new();
+						list_stack.push(sublist);
+					}
 					let elem = self.try_parse_range();
 					if let ListElem::Range{..} = elem {
 						if let Some(Token::RBrace) = self.current_token {}
 						else { panic!("unexpected token"); }
 					}
-					sublist.push(elem);
-					list_stack.push(sublist);
+					let inner_list = list_stack.last_mut().unwrap();
+					inner_list.push(elem);
 				},
 				Some(_) => {
-					//println!("curtok is {:?}", self.current_token);
 					let top = list_stack.last_mut().unwrap();
 					// only accept factor-level values in array
 					// push value onto top-level list in stack
@@ -288,11 +288,10 @@ impl<'a> Parser<'a> {
 					self.eat_current();
 					step = Some(self.factor());
 				}
-				//self.eat(Token::RBrace);
 				ListElem::Range{start: factor, end: end, step: step }
 			},
 			// otherwise do nothing and continue
-			_ => { ListElem::Value(factor) }
+			_ => ListElem::Value(factor)
 		}
 	}
 

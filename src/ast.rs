@@ -331,17 +331,13 @@ pub struct BinOpExpression {
 
 #[derive(Debug, Clone)]
 pub struct BrackOpExpression {
-	pub base_vname: String,
-	pub left: Expression,
-	pub right: Expression,
-	pub depth: usize
+	pub var: String,
+	pub indices: Vec<Expression>
 }
 
 impl BrackOpExpression {
-	pub fn new(vname: String, left: Expression,
-			   right: Expression, depth: usize) 
-			   -> BrackOpExpression {
-		BrackOpExpression { base_vname: vname, left: left, right: right, depth: depth }
+	pub fn new(var: String) -> BrackOpExpression {
+		BrackOpExpression { var: var, indices: vec![] }
    }
 }
 
