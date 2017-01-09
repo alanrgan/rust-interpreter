@@ -1,7 +1,6 @@
 use ast::*;
 use parser::Parser;
 use std::collections::HashMap;
-use std::cell::RefCell;
 
 pub struct Interpreter<'a> {
 	parser: Parser<'a>,
@@ -47,7 +46,7 @@ impl<'a> Interpreter<'a> {
 				}
 			},
 			Expression::BrackOp(ref brackop) => {
-				self.visit_brackets(brackop, &mut Vec::new())
+				self.visit_brackets(brackop)
 			},
 			Expression::UnaryOp(ref op_expr) => {
 				let val = self.visit_expr(&op_expr.val);
@@ -145,8 +144,7 @@ impl<'a> Interpreter<'a> {
 	// EVENTUALLY have this function be 'follow_brackets' and return a mutable reference
 	// to the stored Primitive in the symbol table
 	// i.e. visit_brackets(&mut self, expr: &BrackOpExpression) -> Result<&mut Primitive, String>
-	fn visit_brackets(&mut self, expr: &BrackOpExpression, index_queue: &mut Vec<usize>)
-					  -> Result<Primitive, String> {
+	fn visit_brackets(&mut self, expr: &BrackOpExpression) -> Result<Primitive, String> {
 
 		//println!("selfvmap is {:?}", self.vmap);
 	  	// TODO: convert closure to macro
@@ -243,18 +241,17 @@ impl<'a> Interpreter<'a> {
 		};
 
 		// convert range into a vector of Primitives
-		let rng_list = range.enumerate()
-							.filter(|i| i.0 % step == 0)
-							.map(|tup| Primitive::Integer(tup.1))
-							.collect::<Vec<_>>();
-		rng_list
+		range.enumerate()
+			 .filter(|i| i.0 % step == 0)
+			 .map(|tup| Primitive::Integer(tup.1))
+			 .collect::<Vec<_>>()
 	}
 }
 
 impl List {
 	// returns reference to mutable vector
 	pub fn get_mut_at<'b>(nested_arr: &'b mut Primitive, 
-						  indices: &Vec<usize>) -> Option<&'b mut Vec<ListElem>> {
+						  indices: &[usize]) -> Option<&'b mut Vec<ListElem>> {
 		// follow all the values in the indices vector
 		if let Primitive::Array(ref mut list) = *nested_arr {
 			let mut values = &mut list.values;
@@ -264,7 +261,7 @@ impl List {
 	}
 
 	fn get_mut_helper<'a>(some_vec: &'a mut Vec<ListElem>,
-						  indices: &Vec<usize>, ind: usize) -> Option<&'a mut Vec<ListElem>> {
+						  indices: &[usize], ind: usize) -> Option<&'a mut Vec<ListElem>> {
 		//println!("vec is {:?}\n", some_vec);
 		//println!("indices: {:?}", indices);
 		if indices.is_empty() { panic!("indices may not be empty"); }
@@ -274,7 +271,6 @@ impl List {
 			return List::get_mut_helper(&mut sublist.values, indices, ind+1);
 		}
 		panic!("mismatched array dimensions");
-		None
 	}
 }
 
