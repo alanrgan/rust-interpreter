@@ -148,7 +148,7 @@ impl<'a> Interpreter<'a> {
 	fn visit_brackets(&mut self, expr: &BrackOpExpression, index_queue: &mut Vec<usize>)
 					  -> Result<Primitive, String> {
 
-		println!("selfvmap is {:?}", self.vmap);
+		//println!("selfvmap is {:?}", self.vmap);
 	  	// TODO: convert closure to macro
 		let indices = expr.indices.clone()
 		    .into_iter()
@@ -159,16 +159,26 @@ impl<'a> Interpreter<'a> {
 			}).collect::<Vec<_>>();
 
 		//let mut mymap = self.vmap.clone();
-		let list_elem: Option<ListElem>;
+		let list_elem: Vec<ListElem>;
 		{
 			let stored_list = try!(self.vmap.get_mut(&expr.var)
 								  .ok_or("variable does not exist in this scope"));
 
-			let elem = try!(List::get_mut_at(stored_list, &indices));
-			list_elem = Some(elem.clone());
+			let elem = List::get_mut_at(stored_list, &indices);
+			list_elem = elem.unwrap().clone();
 		}
 
-		match list_elem.unwrap() {
+		let index = {
+			if list_elem.len() == 1 {
+				if let ListElem::Range{..} = list_elem[0] {
+					0
+				} else { *indices.last().unwrap() }
+			} else { *indices.last().unwrap() }
+		};
+
+		//println!("listelem {:?}", list_elem);
+
+		match list_elem[index] {
 			ListElem::Value(ref expr) => {
 				self.visit_expr(expr)
 			},
@@ -189,94 +199,20 @@ impl<'a> Interpreter<'a> {
 
 				let rng_list = self.expand_range(start, end, step);
 				//if !(range_index >= rng_list.len()) {
-					let res = Ok(rng_list[*indices.last().unwrap()].clone());
-					let updated_list = rng_list.into_iter()
-									   .map(|val| ListElem::Value(Expression::Value(val)))
-									   .collect::<Vec<_>>();
+				let res = Ok(rng_list[*indices.last().unwrap()].clone());
+				let updated_list = rng_list.into_iter()
+								   .map(|val| ListElem::Value(Expression::Value(val)))
+								   .collect::<Vec<_>>();
 
-				    let stored_list = try!(self.vmap.get_mut(&expr.var)
-							  .ok_or("variable does not exist in this scope"));
+			    let stored_list = self.vmap.get_mut(&expr.var).unwrap();
 
-					let list_elem = try!(List::get_mut_at(stored_list, &indices));
-					*list_elem = ListElem::SubList(List::from(updated_list));
+				let list_elem = List::get_mut_at(stored_list, &indices).unwrap();
+				*list_elem = updated_list;
 
-					res
-				//} else {
-				//	panic!("array index {} out of bounds", range_index)
-				//}
+				res
 			}
 		}
-
-		//let left = self.visit_expr(&expr.var).unwrap();
-
-		//let right = self.visit_expr(&expr.right).unwrap();
-		/*match (left, right) {
-			(Primitive::Array(list), Primitive::Integer(index)) => {
-				// destructure varname into a String
-				let varname = expr.base_vname.clone();
-
-				// validity of index is bracket depends on if the array represents a list or a range
-				// ranges are represented as length-1 lists, but should be allowed to be accessed
-				// based on its expanded value
-				let range_index = index as usize;
-				let index = {
-					if let Some(&ListElem::Range{..}) = list.values.get(0) {
-						0
-					} else { index as usize }
-				};
-
-				if index >= list.values.len() {
-					panic!("array index {} out of bounds", index);
-				}
-
-				index_queue.push(index);
-
-				let list_elem = &list.values[index];
-
-				// once the value is fetched from the array, determine how to convert
-				// into a primitive
-				match *list_elem {
-					ListElem::Value(ref expr) => {
-						self.visit_expr(expr)
-					},
-					ListElem::SubList(ref list) => {
-						Ok(Primitive::Array(list.clone()))
-					},
-					// semi-lazy evaluation of range expressions
-					ListElem::Range{ref start, ref end, ref step} => {
-						// TODO: convert the following to a separate function 
-						// given a mutable reference to the range to expand,
-						// replace it with the appropriate expanded range
-						// fn expand_range(&mut ListElem)
-						// that way, in List::set() won't have to traverse through nested
-						// structure more than once (get mut reference, expand if necessary),
-						// then set
-
-						let rng_list = self.expand_range(start, end, step);
-						if !(range_index >= rng_list.len()) {
-							let res = Ok(rng_list[range_index].clone());
-							let updated_list = rng_list.into_iter()
-											   .map(|val| ListElem::Value(Expression::Value(val)))
-											   .collect::<Vec<_>>();
-
-							let stored_list = self.vmap.get_mut(&varname).unwrap();
-							//let vec_elem = try!(List::get_mut_at(stored_list, index_queue));
-							*vec_elem = ListElem::SubList(List::from(updated_list));
-
-							res
-						} else {
-							panic!("array index {} out of bounds", range_index)
-						}
-					},
-				}
-			},
-			//_ => { Err(String::from("unsupported use of brackets operator")) }
-		}*/
 	}
-
-	//fn get_mut_at<'b>(&mut self, indices: &Vec<usize>) -> Result<&'b mut ListElem, String> {
-	//	Err("test".to_string())
-	//}
 
 	fn expand_range(&mut self, start: &Expression, end: &Expression, step: &Option<Expression>) -> Vec<Primitive> {
 		// TODO: refactor below into a macro
@@ -316,51 +252,29 @@ impl<'a> Interpreter<'a> {
 }
 
 impl List {
+	// returns reference to mutable vector
 	pub fn get_mut_at<'b>(nested_arr: &'b mut Primitive, 
-						  indices: &Vec<usize>) -> Result<&'b mut ListElem, String> {
+						  indices: &Vec<usize>) -> Option<&'b mut Vec<ListElem>> {
 		// follow all the values in the indices vector
 		if let Primitive::Array(ref mut list) = *nested_arr {
 			let mut values = &mut list.values;
 			return List::get_mut_helper(values, indices, 0);
 		}
-		Err(format!("Expected an array, got a {:?}", nested_arr))
+		panic!("Expected an array, got a {:?}", nested_arr)
 	}
 
 	fn get_mut_helper<'a>(some_vec: &'a mut Vec<ListElem>,
-						  indices: &Vec<usize>, ind: usize) -> Result<&'a mut ListElem, String> {
-		if some_vec.len() == 1 {
-			let temp = some_vec.get_mut(0);
-			if let Some(&mut ListElem::SubList(..)) = temp {
-				//if let ListElem::Range{..} = some_vec[0] {
-					return temp.ok_or("error".to_string());
-				//}
-			}
+						  indices: &Vec<usize>, ind: usize) -> Option<&'a mut Vec<ListElem>> {
+		//println!("vec is {:?}\n", some_vec);
+		//println!("indices: {:?}", indices);
+		if indices.is_empty() { panic!("indices may not be empty"); }
+		if ind == indices.len()-1 {
+			return Some(some_vec);
+		} else if let ListElem::SubList(ref mut sublist) = some_vec[indices[ind]] {
+			return List::get_mut_helper(&mut sublist.values, indices, ind+1);
 		}
-		if indices.is_empty() { return Err(String::from("Array indices cannot be empty")); }
-		else if ind == indices.len()-1 {
-			//println!("vec is {:?}, veclen is {}, ind is {}, indices is {:?}", some_vec, some_vec.len(), ind, indices);
-			if some_vec.len() == 1 {
-				if let ListElem::Range{..} = some_vec[0] {
-					println!("yo");
-					return some_vec.get_mut(0).ok_or("error".to_string());
-				}
-			}
-			some_vec.get_mut(indices[ind])
-						   .ok_or(format!("invalid array index {}", indices[ind]))
-		} else {
-			let a = some_vec.get_mut(indices[ind]);
-			if let Some(&mut ListElem::SubList(ref mut sublist)) = a {
-				/*println!("sublist is {:?}", sublist);
-				if sublist.values.len() == 1 {
-					if let ListElem::Range{..} = sublist.values[0] {
-						return a.ok_or("error".to_string());
-					}
-				}*/
-				List::get_mut_helper(&mut sublist.values, indices, ind+1)
-			} else {
-				Err(format!("Requested indices are deeper than array, found {:?}", a))
-			}
-		}
+		panic!("mismatched array dimensions");
+		None
 	}
 }
 
