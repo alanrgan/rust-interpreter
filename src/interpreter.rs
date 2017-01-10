@@ -233,29 +233,6 @@ impl<'a> Interpreter<'a> {
 			 .filter(|i| i.0 % step == 0)
 			 .map(|tup| ListElem::Value(Expression::Value(Primitive::Integer(tup.1))))
 			 .collect::<Vec<_>>()
-	}}
-
-impl List {
-	// returns reference to mutable vector
-	pub fn get_mut_at<'b>(nested_arr: &'b mut Primitive, 
-						  indices: &[usize]) -> Option<&'b mut Vec<ListElem>> {
-		// follow all the values in the indices vector
-		if let Primitive::Array(ref mut list) = *nested_arr {
-			let mut values = &mut list.values;
-			return List::get_mut_helper(values, indices, 0);
-		}
-		panic!("Expected an array, got a {:?}", nested_arr)
-	}
-
-	fn get_mut_helper<'a>(some_vec: &'a mut Vec<ListElem>,
-						  indices: &[usize], ind: usize) -> Option<&'a mut Vec<ListElem>> {
-		if indices.is_empty() { panic!("indices may not be empty"); }
-		if ind == indices.len()-1 {
-			return Some(some_vec);
-		} else if let ListElem::SubList(ref mut sublist) = some_vec[indices[ind]] {
-			return List::get_mut_helper(&mut sublist.values, indices, ind+1);
-		}
-		panic!("mismatched array dimensions");
 	}
 }
 
