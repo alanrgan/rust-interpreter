@@ -134,7 +134,12 @@ impl<'a> Parser<'a> {
 	}
 
 	fn for_loop(&mut self) -> Statement {
-		Statement::Empty
+		self.eat(Token::For);
+		let var = self.variable();
+		self.eat(Token::In);
+		let iterable_expr = self.expr(0);
+		let conseq = self.compound_statement();
+		Statement::For(Box::new(ForStatement{var: var, range: iterable_expr, conseq: conseq}))
 	}
 
 	fn while_loop(&mut self) -> Statement {

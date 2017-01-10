@@ -94,6 +94,7 @@ impl<'a> Interpreter<'a> {
 		}
 	}
 
+	#[allow(single_match)]
 	fn visit_statement(&mut self, statement: &Statement) -> Result<Primitive, String> {
 		match *statement {
 			Statement::Compound{ref children} => {
@@ -139,6 +140,30 @@ impl<'a> Interpreter<'a> {
 					panic!("expected boolean expression in 'while' statement");
 				}
 				Ok(Primitive::Empty)
+			},
+			Statement::For(ref fs) => {
+				if let Expression::Variable(ref vname) = fs.var {
+					let list = self.visit_expr(&fs.range)
+						.and_then(|r| r.unpack::<List>()
+						.map_err(|_| "expected list in for loop".to_string()))
+						.unwrap();
+
+					for elem in list.values {
+						let prim = match elem {
+							ListElem::Value(ref expr) => self.visit_expr(expr).unwrap(),
+							ListElem::SubList(ref list) => Primitive::Array(list.clone()),
+							_ => unreachable!()
+						};
+						self.vmap.insert(vname.clone(), prim);
+						match self.visit_statement(&fs.conseq) {
+							Ok(Primitive::LTerm(TermToken::Break)) => break,
+							_ => {}
+						};
+					}
+					Ok(Primitive::Empty)
+				} else {
+					Err("expected variable name in for loop".to_string())
+				}
 			},
 			Statement::Assign{ref var, ref value} => {
 				let val = self.visit_expr(value).unwrap();

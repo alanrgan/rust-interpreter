@@ -17,12 +17,9 @@ pub enum Statement {
 
 #[derive(Debug, Clone)]
 pub struct ForStatement {
-	assign: Statement, // must be an assign statement
-	//range:
-	cond: Expression,
-	post: Option<Expression>,
-	conseq: Statement,
-	var: Token
+	pub var: Expression,
+	pub range: Expression,
+	pub conseq: Statement,
 }
 
 #[derive(Debug, Clone)]

@@ -43,6 +43,7 @@ pub enum Token {
 	Else,
 	While,
 	For,
+	In,
 	Continue,
 	Return,
 	Break,
@@ -125,7 +126,8 @@ impl KeywordBank {
 						"and" => Token::And,
 						"or" => Token::Or,
 						"not" => Token::Not,
-						"print" => Token::Print
+						"print" => Token::Print,
+						"in" => Token::In
  					}
 		}
 	}
