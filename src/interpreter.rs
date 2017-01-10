@@ -84,7 +84,7 @@ impl<'a> Interpreter<'a> {
 			}
 			match expression {
 				Expression::Empty => {},
-				_ => *elem = ListElem::from(self.visit_expr(&expression).unwrap());
+				_ => *elem = ListElem::from(self.visit_expr(&expression).unwrap())
 			};
 		}
 		if range_found.0 {
