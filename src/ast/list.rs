@@ -27,17 +27,18 @@ impl List {
 
 impl From<Vec<i32>> for List {
 	fn from(some: Vec<i32>) -> List {
-		let values = some.into_iter().map(|v| ListElem::Value(Expression::Value(Primitive::Integer(v))))
+		let values = some.into_iter()
+						.map(|v| ListElem::Value(Expression::Value(Primitive::Integer(v))))
 						.collect::<Vec<_>>();
 		let len = values.len();
-		List {values: values, length: len }
+		List { values: values, length: len }
 	}
 }
 
 impl From<Vec<ListElem>> for List {
 	fn from(some: Vec<ListElem>) -> List {
 		let len = some.len();
-		List {values: some, length: len }
+		List { values: some, length: len }
 	}
 }
 

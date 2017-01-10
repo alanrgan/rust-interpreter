@@ -43,13 +43,7 @@ impl<'a> Parser<'a> {
 	}
 
 	pub fn parse(&mut self) -> Box<Visitable> {
-		//self.eat(Token::Plus);
-		Box::new(self.compound_statement())
-		//Box::new(self.factor())
-		//Box::new(self.factor());
-		//println!("yoyo");
-		//Box::new(self.factor())
-		//Box::new(Expression::Empty)
+		Box::new(self.statement_list())
 	}
 
 	fn statement(&mut self) -> Statement {
@@ -60,9 +54,7 @@ impl<'a> Parser<'a> {
 			Some(Token::While) => self.while_loop(),
 			Some(Token::Ident(vname)) => {
 				let mut var = self.variable();
-				if let Some(expr) = self.parse_brackets(vname) {
-					var = expr;
-				}
+				var = self.parse_brackets(vname).unwrap_or(var);
 
 				match self.current_token {
 					Some(Token::Equals) => self.assignment(var),
@@ -87,9 +79,7 @@ impl<'a> Parser<'a> {
 		let mut nodes: Vec<Statement> = vec![self.statement()];
 		while let Some(ref tok) = self.current_token.clone() {
 			match *tok {
-				Token::Semi => {
-					self.eat(Token::Semi);
-				},
+				Token::Semi => self.eat(Token::Semi),
 				Token::Comment => {
 					self.eat(Token::Comment);
 					// TO COMPLETE
@@ -97,9 +87,11 @@ impl<'a> Parser<'a> {
 				Token::RCurl => break,
 				_ => {}
 			}
-			if let Some(Token::RCurl) = self.current_token { break; }
-			let statement = self.statement();
-			nodes.push(statement);
+			match self.current_token {
+				Some(Token::RCurl) | None => break,
+				_ => {}
+			};
+			nodes.push(self.statement());
 		}
 		Statement::Compound{children: nodes}
 	}
@@ -192,9 +184,7 @@ impl<'a> Parser<'a> {
 				let string = self.string();
 				Expression::Value(Primitive::Str(string))
 			},
-			Token::LBrace => {
-				self.array()
-			},
+			Token::LBrace => self.array(),
 			Token::LParen => {
 				self.eat(Token::LParen);
 				let expr = self.expr(0);
@@ -203,10 +193,7 @@ impl<'a> Parser<'a> {
 			},
 			Token::Ident(vname) => { 
 				let var = self.variable();
-				if let Some(expr) = self.parse_brackets(vname) {
-					return expr;
-				}
-				var
+				self.parse_brackets(vname).unwrap_or(var)
 			},
 			_ => { panic!("found unexpected token {:?}", token) }
 		}
@@ -263,7 +250,6 @@ impl<'a> Parser<'a> {
 				},
 				Some(_) => {
 					let top = list_stack.last_mut().unwrap();
-					// only accept factor-level values in array
 					// push value onto top-level list in stack
 					top.push(self.try_parse_range());
 				},
@@ -280,7 +266,7 @@ impl<'a> Parser<'a> {
 	// returns ListElem::Range if range is parsed,
 	// otherwise returns some other ListElem
 	fn try_parse_range(&mut self) -> ListElem {
-		let factor = self.expr(0);//self.factor();
+		let factor = self.expr(0);
 		// check if the token is now DotRange('..') or otherwise
 		match self.current_token {
 			Some(Token::DotRange) => {

@@ -58,16 +58,13 @@ impl<'a> Interpreter<'a> {
 				}
 			},
 			Expression::Variable(ref vname) => {
-				match self.vmap.get(vname) {
-					Some(val) => Ok(val.clone()),
-					None => Err(format!("No variable named '{}' defined in scope", vname))
-				}
+				self.vmap.get(vname)
+						 .cloned()
+						 .ok_or_else(|| format!("no var named {}", vname))
 			}
 			Expression::Value(ref prim) => {
 				let mut prim = prim.clone();
-				if let Primitive::Array(ref mut list) = prim {
-					self.expand_list(list);
-				}
+				let _ = prim.unpack_mut::<List>().map(|list| self.expand_list(list));
 				Ok(prim)
 			},
 			_ => Ok(Primitive::Empty)
@@ -85,10 +82,10 @@ impl<'a> Interpreter<'a> {
 				},
 				ListElem::SubList(ref mut sublist) => self.expand_list(sublist),
 			}
-			if let Expression::Empty = expression {}
-			else {
-				*elem = ListElem::from(self.visit_expr(&expression).unwrap());
-			}
+			match expression {
+				Expression::Empty => {},
+				_ => *elem = ListElem::from(self.visit_expr(&expression).unwrap());
+			};
 		}
 		if range_found.0 {
 			let length = range_found.1.len();
@@ -152,9 +149,8 @@ impl<'a> Interpreter<'a> {
 					},
 					(&Expression::BrackOp(ref brack_expr), _) => {
 						// use List::get_mut_at for this 
-						let indices = brack_expr.indices.clone()
-						    .into_iter()
-						    .map(|ind| match self.visit_expr(&ind) {
+						let indices = brack_expr.indices.iter()
+						    .map(|ind| match self.visit_expr(ind) {
 								Ok(Primitive::Integer(val)) => val as usize,
 								Ok(other) => panic!("invalid index: expected integer, got {:?}", other),
 								Err(e) => panic!(e)
@@ -171,10 +167,7 @@ impl<'a> Interpreter<'a> {
 				}
 			},
 			Statement::Print(ref expr) => {
-				match self.visit_expr(expr) {
-					Ok(val) => print!("{}", val),
-					Err(e) => panic!(e),
-				};
+				self.visit_expr(expr).map(|val| print!("{}", val)).unwrap();
 				Ok(Primitive::Empty)
 			},
 			Statement::Expr(ref expr) => self.visit_expr(expr),
@@ -188,9 +181,8 @@ impl<'a> Interpreter<'a> {
 	fn visit_brackets(&mut self, expr: &BrackOpExpression) -> Result<Primitive, String> {
 
 	  	// TODO: convert closure to macro
-		let indices = expr.indices.clone()
-		    .into_iter()
-		    .map(|ind| match self.visit_expr(&ind) {
+		let indices = expr.indices.iter()
+		    .map(|ind| match self.visit_expr(ind) {
 				Ok(Primitive::Integer(val)) => val as usize,
 				Ok(other) => panic!("invalid index: expected integer, got {:?}", other),
 				Err(e) => panic!(e)
@@ -212,25 +204,21 @@ impl<'a> Interpreter<'a> {
 	}
 
 	fn expand_range(&mut self, start: &Expression, end: &Expression, step: &Option<Expression>) -> Vec<ListElem> {
-		// TODO: refactor below into a macro
-		let start = match self.visit_expr(start) {
-			Ok(Primitive::Integer(val)) => val,
-			_ => panic!("expected integer value in range expression")
-		};
-		let end = match self.visit_expr(end) {
-			Ok(Primitive::Integer(val)) => val,
-			_ => panic!("expected integer value in range expression")
-		};
-		let step = match *step {
-			Some(ref step_expr) => {
-				if let Ok(Primitive::Integer(val)) = self.visit_expr(step_expr) {
-					val as usize
-				} else {
-					panic!("expected integer value as range step")
-				}
-			},
-			None => 1
-		};
+		let start = self.visit_expr(start)
+						.and_then(|r| r.unpack::<i32>()
+						.map_err(|_| "expected integer value in range expression".to_string()))
+						.unwrap();
+
+		let end = self.visit_expr(end)
+					  .and_then(|r| r.unpack::<i32>()
+					  .map_err(|_| "expected integer value in range expression".to_string()))
+					  .unwrap();
+
+		let step = step.clone().map_or(1, |step_expr|
+					self.visit_expr(&step_expr)
+					.and_then(|r| r.unpack::<i32>()
+					.map_err(|_| "expected integer value as range step".to_string()))
+					.unwrap() as usize);
 
 		let range: Box<Iterator<Item = i32>> = {
 			if start > end { 
