@@ -91,7 +91,9 @@ impl<'a> Interpreter<'a> {
 			}
 		}
 		if range_found.0 {
+			let length = range_found.1.len();
 			list.values = range_found.1;
+			list.length = length;
 		}
 	}
 
@@ -142,17 +144,29 @@ impl<'a> Interpreter<'a> {
 				Ok(Primitive::Empty)
 			},
 			Statement::Assign{ref var, ref value} => {
+				let val = self.visit_expr(value).unwrap();
 				match (var, value) {
 					(&Expression::Variable(ref vname), _) => {
-						let val = self.visit_expr(value).unwrap();
 						self.vmap.insert(vname.clone(), val.clone());
 						Ok(val)
 					},
-					// eventually handle assigning to brackopexpression
-					/*
-					(&Expression::BrackOpExpression(..), _) => {
+					(&Expression::BrackOp(ref brack_expr), _) => {
+						// use List::get_mut_at for this 
+						let indices = brack_expr.indices.clone()
+						    .into_iter()
+						    .map(|ind| match self.visit_expr(&ind) {
+								Ok(Primitive::Integer(val)) => val as usize,
+								Ok(other) => panic!("invalid index: expected integer, got {:?}", other),
+								Err(e) => panic!(e)
+							}).collect::<Vec<_>>();
+
+						let stored_list = try!(self.fetch_var_mut(&brack_expr.var));
+						let list_elem = List::get_mut_at(stored_list, &indices)
+											.expect(&format!("invalid index {}", *indices.last().unwrap()));
+						*list_elem = ListElem::from(val.clone());
+						Ok(val)
 					},
-					*/
+					
 					_ => unreachable!()
 				}
 			},
@@ -182,18 +196,15 @@ impl<'a> Interpreter<'a> {
 				Err(e) => panic!(e)
 			}).collect::<Vec<_>>();
 
-		let list_elem: Vec<ListElem>;
+		let list_elem: ListElem;
 		{
-			let stored_list = try!(self.vmap.get_mut(&expr.var)
-								  .ok_or("variable does not exist in this scope"));
+			let stored_list = try!(self.fetch_var_mut(&expr.var));
 
 			let elem = List::get_mut_at(stored_list, &indices);
 			list_elem = elem.unwrap().clone();
 		}
 
-		let index = *indices.last().unwrap();
-
-		match list_elem[index] {
+		match list_elem {
 			ListElem::Value(ref expr) => self.visit_expr(expr),
 			ListElem::SubList(ref list) => Ok(Primitive::Array(list.clone())),
 			ListElem::Range{..} => unreachable!()
@@ -233,6 +244,10 @@ impl<'a> Interpreter<'a> {
 			 .filter(|i| i.0 % step == 0)
 			 .map(|tup| ListElem::Value(Expression::Value(Primitive::Integer(tup.1))))
 			 .collect::<Vec<_>>()
+	}
+
+	fn fetch_var_mut(&mut self, vname: &str) -> Result<&mut Primitive, String> {
+		self.vmap.get_mut(vname).ok_or("variable does not exist in this scope".to_string())
 	}
 }
 

@@ -58,8 +58,11 @@ impl<'a> Parser<'a> {
 			Some(Token::If) => self.conditional(),
 			Some(Token::For) => self.for_loop(),
 			Some(Token::While) => self.while_loop(),
-			Some(Token::Ident(_)) => {
-				let var = self.variable();
+			Some(Token::Ident(vname)) => {
+				let mut var = self.variable();
+				if let Some(expr) = self.parse_brackets(vname) {
+					var = expr;
+				}
 
 				match self.current_token {
 					Some(Token::Equals) => self.assignment(var),
@@ -128,7 +131,7 @@ impl<'a> Parser<'a> {
 	fn assignment(&mut self, var: Expression) -> Statement {
 		self.eat(Token::Equals);
 		match var {
-			Expression::Variable(_) => {
+			Expression::Variable(_) | Expression::BrackOp(_) => {
 				Statement::Assign {
 					var: var.clone(),
 					value: self.expr(0)
@@ -316,7 +319,6 @@ impl<'a> Parser<'a> {
 
 	fn expr(&mut self, precedence: u8) -> Expression 
 	{
-		//println!("curtok is {:?}", self.current_token);
 		// parse expression prefix as defined in factor() function
 		let mut expr = self.factor();
 		// continue parsing chained binary operators
