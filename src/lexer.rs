@@ -95,11 +95,7 @@ impl<'a> Lexer<'a> {
 					},
 					':' => {
 						self.iter.next();
-						if let Some(&c) = self.iter.peek() {
-							if c == ':' {
-								return Some(Token::DColon);
-							}
-						}
+						return self.peek_choose(Token::Colon, Token::DColon, |c| c == ':');
 					},
 					'=' => {
 						self.iter.next();
@@ -163,7 +159,7 @@ impl<'a> Lexer<'a> {
 		}
 	}
 
-	fn consume_while<F>(&mut self, f: F) -> Vec<char>
+	pub fn consume_while<F>(&mut self, f: F) -> Vec<char>
 		where F: Fn(char) -> bool {
 
 		let mut v: Vec<char> = vec![];

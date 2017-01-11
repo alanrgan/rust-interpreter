@@ -6,6 +6,8 @@ pub enum Token {
 	Integer(i32),
 	Bool(bool),
 	Ident(String),
+	Class,
+	Def,
 	Equals,
 	DEquals,
 	Mult,
@@ -30,6 +32,7 @@ pub enum Token {
 	LCurl, // {
 	LBrace,
 	RBrace,
+	Colon,
 	DColon,
 	GTEquals,
 	GThan,
@@ -127,7 +130,9 @@ impl KeywordBank {
 						"or" => Token::Or,
 						"not" => Token::Not,
 						"print" => Token::Print,
-						"in" => Token::In
+						"in" => Token::In,
+						"def" => Token::Def,
+						"class" => Token::Class
  					}
 		}
 	}

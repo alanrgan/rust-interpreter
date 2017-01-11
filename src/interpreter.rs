@@ -4,12 +4,18 @@ use std::collections::HashMap;
 
 pub struct Interpreter<'a> {
 	parser: Parser<'a>,
-	pub vmap: HashMap<String, Primitive> // map variable name to value
+	pub vmap: HashMap<String, Primitive>, // map variable name to value
+	pub types: HashMap<String, TypedItem>
 }
 
 impl<'a> Interpreter<'a> {
 	pub fn new(parser: Parser) -> Interpreter {
-		Interpreter { parser: parser, vmap: HashMap::new() }
+		let mut types = HashMap::new();
+		types.insert("bool".to_string(), TypedItem::from(Primitive::Bool(true)));
+		types.insert("string".to_string(), TypedItem::from(Primitive::Str("".to_string())));
+		types.insert("int".to_string(), TypedItem::from(Primitive::Integer(0)));
+		types.insert("list".to_string(), TypedItem::from(Primitive::Array(List::from(vec![0]))));
+		Interpreter { parser: parser, vmap: HashMap::new(), types: types }
 	}
 
 	pub fn interpret(&mut self) -> Primitive {
@@ -103,42 +109,39 @@ impl<'a> Interpreter<'a> {
 					if let Statement::Term(TermToken::Break) = *child {
 						return Ok(Primitive::LTerm(TermToken::Break));
 					}
-					let result = self.visit(Box::new(child.clone()));
-					if let Ok(Primitive::LTerm(TermToken::Break)) = result {
-						return result;
+					let result = self.visit(Box::new(child.clone())).unwrap();
+					if let Primitive::LTerm(TermToken::Break) = result {
+						return Ok(result);
 					}
 				}
 				Ok(Primitive::Empty)
 			},
 			Statement::If(ref if_stmt) => {
-				match self.visit_expr(&if_stmt.pred) {
-					Ok(Primitive::Bool(value)) => {
+				self.visit_expr(&if_stmt.pred)
+					.and_then(|val| Primitive::unpack::<bool>(&val)
+					.map_err(|_| "expected boolean expression in 'if' statement".to_string()))
+					.and_then(|value| {
 						if value {
 							self.visit_statement(&if_stmt.conseq)
-						} else if if_stmt.alt.is_some() {
-							let alt = if_stmt.alt.clone().unwrap();
-							self.visit_statement(&alt)
 						} else {
-							Ok(Primitive::Empty)
+							if_stmt.alt.clone()
+							.map_or(Ok(Primitive::Empty), |alt| self.visit_statement(&alt))
 						}
-					},
-					Ok(_) => panic!("expected boolean expression in 'if' statement"),
-					Err(e) => panic!(e)
-				}
+					})
 			},
 			Statement::While{ref pred, ref conseq} => {
 				let pred_val = self.visit_expr(pred);
-				while let Ok(Primitive::Bool(value)) = self.visit_expr(pred) {
+				while let Primitive::Bool(value) = self.visit_expr(pred).unwrap() {
 					if value {
-						if let Ok(Primitive::LTerm(TermToken::Break)) = self.visit_statement(conseq) {
+						if let Primitive::LTerm(TermToken::Break) = self.visit_statement(conseq).unwrap() {
 							break;
 						}
 					}
 					else { break; }
 				}
-				if let Ok(Primitive::Bool(_)) = pred_val {} else {
-					panic!("expected boolean expression in 'while' statement");
-				}
+				pred_val.and_then(|val| Primitive::unpack::<bool>(&val)
+					.map_err(|_| "expected boolean expression in 'while' statement".to_string()))
+					.unwrap();
 				Ok(Primitive::Empty)
 			},
 			Statement::For(ref fs) => {
@@ -175,11 +178,12 @@ impl<'a> Interpreter<'a> {
 					(&Expression::BrackOp(ref brack_expr), _) => {
 						// use List::get_mut_at for this 
 						let indices = brack_expr.indices.iter()
-						    .map(|ind| match self.visit_expr(ind) {
-								Ok(Primitive::Integer(val)) => val as usize,
-								Ok(other) => panic!("invalid index: expected integer, got {:?}", other),
-								Err(e) => panic!(e)
-							}).collect::<Vec<_>>();
+						    .map(|ind| self.visit_expr(ind)
+								.and_then(|val| Primitive::unpack::<i32>(&val)
+								.map_err(|_| "invalid index: expected integer".to_string()))
+								.map(|val| val as usize)
+								.unwrap()
+							).collect::<Vec<_>>();
 
 						let stored_list = try!(self.fetch_var_mut(&brack_expr.var));
 						let list_elem = List::get_mut_at(stored_list, &indices)
@@ -191,6 +195,13 @@ impl<'a> Interpreter<'a> {
 					_ => unreachable!()
 				}
 			},
+			Statement::Define(ref obj) => {
+				if self.types.contains_key(&obj.name()) {
+					panic!("class '{}' is already defined", obj.name());
+				}
+				self.types.insert(obj.name(), TypedItem::Object(obj.clone()));
+				Ok(Primitive::Empty)
+			},
 			Statement::Print(ref expr) => {
 				self.visit_expr(expr).map(|val| print!("{}", val)).unwrap();
 				Ok(Primitive::Empty)
@@ -200,26 +211,20 @@ impl<'a> Interpreter<'a> {
 		}
 	}
 
-	// EVENTUALLY have this function be 'follow_brackets' and return a mutable reference
-	// to the stored Primitive in the symbol table
-	// i.e. visit_brackets(&mut self, expr: &BrackOpExpression) -> Result<&mut Primitive, String>
 	fn visit_brackets(&mut self, expr: &BrackOpExpression) -> Result<Primitive, String> {
-
-	  	// TODO: convert closure to macro
 		let indices = expr.indices.iter()
-		    .map(|ind| match self.visit_expr(ind) {
-				Ok(Primitive::Integer(val)) => val as usize,
-				Ok(other) => panic!("invalid index: expected integer, got {:?}", other),
-				Err(e) => panic!(e)
-			}).collect::<Vec<_>>();
+		    .map(|ind| self.visit_expr(ind)
+				.and_then(|val| Primitive::unpack::<i32>(&val)
+				.map_err(|_| "invalid index: expected integer".to_string()))
+				.map(|val| val as usize)
+				.unwrap()
+			).collect::<Vec<_>>();
 
-		let list_elem: ListElem;
-		{
+		let list_elem = {
 			let stored_list = try!(self.fetch_var_mut(&expr.var));
-
 			let elem = List::get_mut_at(stored_list, &indices);
-			list_elem = elem.unwrap().clone();
-		}
+			elem.unwrap().clone()
+		};
 
 		match list_elem {
 			ListElem::Value(ref expr) => self.visit_expr(expr),

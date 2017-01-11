@@ -1,5 +1,6 @@
 use super::expression::*;
 use super::token::*;
+use super::types::*;
 
 #[derive(Debug, Clone)]
 pub enum Statement {
@@ -9,6 +10,7 @@ pub enum Statement {
 	Assign { var: Expression, value: Expression },
 	If(Box<IfStatement>),
 	Print(Expression),
+	Define(Object),
 	// temporary
 	Expr(Expression),
 	Term(TermToken),

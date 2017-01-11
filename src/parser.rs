@@ -53,8 +53,19 @@ impl<'a> Parser<'a> {
 			Some(Token::For) => self.for_loop(),
 			Some(Token::While) => self.while_loop(),
 			Some(Token::Ident(vname)) => {
+				// add type syntax here
 				let mut var = self.variable();
-				var = self.parse_brackets(vname).unwrap_or(var);
+				//println!("var {:?}", var);
+				//println!("curtok: {:?}", self.current_token);
+				if let Some(Token::Colon) = self.current_token {
+					self.eat_current();
+					if let Some(Token::Ident(ref val)) = self.current_token {
+						println!("type is {}", val);
+					}
+					self.eat_current();
+				} else {
+					var = self.parse_brackets(vname).unwrap_or(var);
+				}
 
 				match self.current_token {
 					Some(Token::Equals) => self.assignment(var),
@@ -70,6 +81,7 @@ impl<'a> Parser<'a> {
 				Statement::Term(TermToken::Break) 
 			},
 			Some(Token::Print) => self.print_statement(),
+			Some(Token::Def) => self.define(),
 			Some(_) => { Statement::Expr(self.expr(0)) },
 			None => Statement::Empty
 		}
@@ -168,6 +180,16 @@ impl<'a> Parser<'a> {
 		let node = Statement::Print(self.expr(0));
 		self.eat(Token::RParen);
 		node
+	}
+
+	fn define(&mut self) -> Statement {
+		self.eat(Token::Def);
+		self.eat(Token::Class);
+		if let Some(Token::Ident(ref tname)) = self.current_token {
+			Statement::Define(Object::new(tname.clone()))
+		} else {
+			Statement::Empty
+		}
 	}
 
 	fn factor(&mut self) -> Expression {
@@ -301,7 +323,7 @@ impl<'a> Parser<'a> {
 	fn variable(&mut self) -> Expression {
 		let tok = self.current_token.clone().unwrap();
 		if let Token::Ident(val) = tok {
-			self.eat(Token::Ident(String::from("")));
+			self.eat_current();
 			Expression::Variable(val)
 		} else {
 			panic!("expected variable name, got {:?}", tok);
@@ -334,7 +356,7 @@ impl<'a> Parser<'a> {
 		match self.current_token.clone() {
 			Some(tok) => {
 				if tok.is_binop() {
-					self.eat(tok.clone());
+					self.eat_current();
 					let right = self.expr(precedence);
 					Expression::new_binop(tok, left, right)
 				} else {

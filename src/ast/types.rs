@@ -1,6 +1,7 @@
 use std::ops::{Add, Sub, Mul, Div};
 use std::fmt;
 use std::marker::Sized;
+use std::collections::HashMap;
 
 use super::token::*;
 use super::list::*;
@@ -8,6 +9,28 @@ use super::list::*;
 pub trait Unpacker {
 	fn unpack(&Primitive) -> Result<Self, ()> where Self: Sized;
 	fn unpack_mut(&mut Primitive) -> Result<&mut Self, ()> where Self: Sized;
+}
+
+// user-defined types, essentially
+#[derive(Clone, Debug)]
+pub struct Object {
+	pub typename: String,
+	attrs: HashMap<String, TypedItem>
+}
+
+impl Object {
+	pub fn new(t: String) -> Object {
+		Object{ typename: t, attrs: HashMap::new() }
+	}
+
+	pub fn add_attr(&mut self, name: String, ty: TypedItem) -> Result<(), String> {
+		self.attrs.insert(name, ty);
+		Ok(())
+	}
+
+	pub fn name(&self) -> String {
+		self.typename.clone()
+	}
 }
 
 #[derive(Debug, Clone)]
@@ -18,6 +41,31 @@ pub enum Primitive {
 	Array(List),
 	LTerm(TermToken),
 	Empty
+}
+
+#[derive(Clone, Debug)]
+pub enum TypedItem {
+	Primitive(Primitive),
+	Object(Object)
+}
+
+impl TypedItem {
+	pub fn typename(&self) -> String {
+		match *self {
+			TypedItem::Object(ref obj) => obj.name(),
+			TypedItem::Primitive(Primitive::Bool(_)) => "bool".to_string(),
+			TypedItem::Primitive(Primitive::Integer(_)) => "int".to_string(),
+			TypedItem::Primitive(Primitive::Str(_)) => "str".to_string(),
+			TypedItem::Primitive(Primitive::Array(_)) => "list".to_string(),
+			_ => "".to_string()
+		}
+	}
+}
+
+impl From<Primitive> for TypedItem {
+	fn from(some: Primitive) -> TypedItem {
+		TypedItem::Primitive(some)
+	}
 }
 
 impl Unpacker for bool {
