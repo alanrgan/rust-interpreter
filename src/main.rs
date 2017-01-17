@@ -43,5 +43,7 @@ fn main() {
 			.iter().collect::<Vec<_>>();
 	a.sort_by_key(|elem| elem.0);
 
-	println!("{:?}", a);
+	if !cfg!(feature = "test") {
+		println!("{:?}", a);
+	}
 }
