@@ -42,6 +42,7 @@ pub enum Token {
 	Comment,
 	BlockStart,
 	BlockEnd,
+	Let,
 	If,
 	Else,
 	While,
@@ -132,7 +133,8 @@ impl KeywordBank {
 						"print" => Token::Print,
 						"in" => Token::In,
 						"def" => Token::Def,
-						"class" => Token::Class
+						"class" => Token::Class,
+						"let" => Token::Let
  					}
 		}
 	}

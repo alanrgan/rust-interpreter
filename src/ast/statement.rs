@@ -11,10 +11,18 @@ pub enum Statement {
 	If(Box<IfStatement>),
 	Print(Expression),
 	Define(Object),
+	Let(Box<LetStatement>),
 	// temporary
 	Expr(Expression),
 	Term(TermToken),
 	Empty
+}
+
+#[derive(Debug, Clone)]
+pub struct LetStatement {
+	pub vname: String,
+	pub ty: String,
+	pub assign: Option<Statement>
 }
 
 #[derive(Debug, Clone)]

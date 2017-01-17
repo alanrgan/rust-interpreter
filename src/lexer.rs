@@ -24,7 +24,7 @@ impl<'a> Lexer<'a> {
 			} else {
 				match ch {
 					'a' ... 'z' | 'A' ... 'Z' | '_' => {
-						let var: String = self.consume_while(|c| c.is_alphabetic() || c == '_')
+						let var: String = self.consume_while(|c| c.is_alphanumeric() || c == '_')
 								.into_iter()
 								.collect();
 						return self.keywords.try_fetch(var.clone(), Token::Ident(var));

@@ -2,12 +2,13 @@ use super::ast::*;
 use super::token::*;
 use super::types::*;
 use super::list::*;
+use super::value::*;
 
 #[derive(Debug, Clone)]
 pub enum Expression {
 	BinOp(Box<BinOpExpression>),
 	BrackOp(Box<BrackOpExpression>),
-	Value(Primitive),
+	Value(TypedItem),
 	Variable(String),
 	Empty,
 	UnaryOp(Box<UnaryOpExpression>)
@@ -33,11 +34,23 @@ impl Expression {
 		let bexpr = BinOpExpression { op: op, left: left, right: right };
 		Expression::BinOp(Box::new(bexpr))
 	}
+
+	pub fn as_variable(&self) -> Option<String> {
+		if let Expression::Variable(ref vname) = *self {
+			Some(vname.clone())
+		} else { None }
+	}
 }
 
 impl From<List> for Expression {
 	fn from(some: List) -> Expression {
-		Expression::Value(Primitive::Array(some))
+		Expression::Value(Primitive::Array(some).into())
+	}
+}
+
+impl From<Primitive> for Expression {
+	fn from(some: Primitive) -> Expression {
+		Expression::Value(some.into())
 	}
 }
 

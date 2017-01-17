@@ -5,27 +5,34 @@ use std::collections::HashMap;
 
 use super::token::*;
 use super::list::*;
+use super::func::Function;
+use super::value::Value;
 
-pub trait Unpacker {
-	fn unpack(&Primitive) -> Result<Self, ()> where Self: Sized;
-	fn unpack_mut(&mut Primitive) -> Result<&mut Self, ()> where Self: Sized;
+pub trait Unpacker<T> {
+	fn unpack(&T) -> Result<Self, ()> where Self: Sized;
+	fn unpack_mut(&mut T) -> Result<&mut Self, ()> where Self: Sized;
 }
 
 // user-defined types, essentially
 #[derive(Clone, Debug)]
 pub struct Object {
 	pub typename: String,
-	attrs: HashMap<String, TypedItem>
+	attrs: HashMap<String, TypedItem>,
+	funcs: HashMap<String, Function>
 }
 
 impl Object {
 	pub fn new(t: String) -> Object {
-		Object{ typename: t, attrs: HashMap::new() }
+		Object{ typename: t, attrs: HashMap::new(), funcs: HashMap::new() }
 	}
 
 	pub fn add_attr(&mut self, name: String, ty: TypedItem) -> Result<(), String> {
 		self.attrs.insert(name, ty);
 		Ok(())
+	}
+
+	pub fn get_func(&self, name: &String) -> Option<&Function> {
+		self.funcs.get(name)
 	}
 
 	pub fn name(&self) -> String {
@@ -46,7 +53,8 @@ pub enum Primitive {
 #[derive(Clone, Debug)]
 pub enum TypedItem {
 	Primitive(Primitive),
-	Object(Object)
+	Object(Object),
+	Value(Box<Value>)
 }
 
 impl TypedItem {
@@ -60,6 +68,38 @@ impl TypedItem {
 			_ => "".to_string()
 		}
 	}
+
+	pub fn as_primitive(self) -> Result<Primitive, ()> {
+		match self {
+			TypedItem::Primitive(some) => Ok(some),
+			_ => Err(())
+		}
+	}
+
+	pub fn unpack<T>(&self) -> Result<T, ()> where T: Unpacker<Primitive> {
+		match *self {
+			TypedItem::Primitive(ref prim) => T::unpack(prim),
+			_ => Err(())
+		}
+	}
+
+	pub fn unpack_mut<T>(&mut self) -> Result<&mut T, ()> where T: Unpacker<Primitive> {
+		match *self {
+			TypedItem::Primitive(ref mut prim) => T::unpack_mut(prim),
+			_ => Err(())
+		}
+	}
+}
+
+impl fmt::Display for TypedItem {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		match *self {
+			TypedItem::Primitive(Primitive::Bool(ref val)) => write!(f, "{}", val),
+			TypedItem::Primitive(Primitive::Integer(ref val)) => write!(f, "{}", val),
+			TypedItem::Primitive(Primitive::Str(ref val)) => write!(f, "{}", val),
+			_ => write!(f, "")
+		}
+	}
 }
 
 impl From<Primitive> for TypedItem {
@@ -68,7 +108,7 @@ impl From<Primitive> for TypedItem {
 	}
 }
 
-impl Unpacker for bool {
+impl Unpacker<Primitive> for bool {
 	fn unpack(p: &Primitive) -> Result<bool, ()> {
 		if let Primitive::Bool(ref v) = *p { Ok(*v) } else { Err(()) }
 	}
@@ -78,7 +118,7 @@ impl Unpacker for bool {
 	}
 }
 
-impl Unpacker for i32 {
+impl Unpacker<Primitive> for i32 {
 	fn unpack(p: &Primitive) -> Result<i32, ()> {
 		if let Primitive::Integer(ref i) = *p { Ok(*i) } else { Err(()) }
 	}
@@ -88,7 +128,7 @@ impl Unpacker for i32 {
 	}
 }
 
-impl Unpacker for String {
+impl Unpacker<Primitive> for String {
 	fn unpack(p: &Primitive) -> Result<String, ()> {
 		if let Primitive::Str(ref s) = *p { Ok(s.clone()) } else { Err(()) }
 	}
@@ -98,7 +138,7 @@ impl Unpacker for String {
 	}
 }
 
-impl Unpacker for List {
+impl Unpacker<Primitive> for List {
 	fn unpack(p: &Primitive) -> Result<List, ()> {
 		if let Primitive::Array(ref l) = *p { Ok(l.clone()) } else { Err(()) }
 	}
@@ -109,11 +149,11 @@ impl Unpacker for List {
 }
 
 impl Primitive {
-	pub fn unpack<T>(&self) -> Result<T, ()> where T: Unpacker {
+	pub fn unpack<T>(&self) -> Result<T, ()> where T: Unpacker<Primitive> {
 		T::unpack(self)
 	}
 
-	pub fn unpack_mut<T>(&mut self) -> Result<&mut T, ()> where T: Unpacker {
+	pub fn unpack_mut<T>(&mut self) -> Result<&mut T, ()> where T: Unpacker<Primitive> {
 		T::unpack_mut(self)
 	}
 }

@@ -1,5 +1,6 @@
 use super::expression::*;
 use super::types::*;
+use super::value::Value;
 
 #[derive(Debug, Clone)]
 pub struct List {
@@ -28,7 +29,7 @@ impl List {
 impl From<Vec<i32>> for List {
 	fn from(some: Vec<i32>) -> List {
 		let values = some.into_iter()
-						.map(|v| ListElem::Value(Expression::Value(Primitive::Integer(v))))
+						.map(|v| ListElem::Value(Expression::from(Primitive::Integer(v))))
 						.collect::<Vec<_>>();
 		let len = values.len();
 		List { values: values, length: len }
@@ -47,6 +48,16 @@ impl From<Primitive> for ListElem {
 		if let Primitive::Array(list) = some {
 			ListElem::SubList(list)
 		} else {
+			ListElem::Value(Expression::from(some))
+		}
+	}
+}
+
+impl From<TypedItem> for ListElem {
+	fn from(some: TypedItem) -> ListElem {
+		if let TypedItem::Primitive(prim) = some {
+			ListElem::from(prim)
+		} else {
 			ListElem::Value(Expression::Value(some))
 		}
 	}
@@ -54,8 +65,15 @@ impl From<Primitive> for ListElem {
 
 impl List {
 	// returns reference to mutable vector
-	pub fn get_mut_at<'b>(nested_arr: &'b mut Primitive, 
+	pub fn get_mut_at<'b>(nested_arr: &'b mut Value, 
 						  indices: &[usize]) -> Option<&'b mut ListElem> {
+		let nested_arr = {
+			if let Some(TypedItem::Primitive(ref mut prim)) = nested_arr.value {
+				prim
+			} else {
+				panic!("Expected list, not object")
+			}
+		};
 		// follow all the values in the indices vector
 		if let Primitive::Array(ref mut list) = *nested_arr {
 			let mut values = &mut list.values;

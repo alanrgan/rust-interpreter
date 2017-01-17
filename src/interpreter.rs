@@ -4,7 +4,9 @@ use std::collections::HashMap;
 
 pub struct Interpreter<'a> {
 	parser: Parser<'a>,
-	pub vmap: HashMap<String, Primitive>, // map variable name to value
+	// TODO: change to <String, Value>
+	pub vmap: HashMap<String, Value>, // map variable name to value
+	// This HashMap is used to check if requested type/class members are valid
 	pub types: HashMap<String, TypedItem>
 }
 
@@ -18,12 +20,12 @@ impl<'a> Interpreter<'a> {
 		Interpreter { parser: parser, vmap: HashMap::new(), types: types }
 	}
 
-	pub fn interpret(&mut self) -> Primitive {
+	pub fn interpret(&mut self) -> TypedItem {
 		let parsed_input = self.parser.parse();
 		self.visit(parsed_input).unwrap()
 	}
 
-	pub fn visit(&mut self, node: Box<Visitable>) -> Result<Primitive, String> {
+	pub fn visit(&mut self, node: Box<Visitable>) -> Result<TypedItem, String> {
 		match node.node_type() {
 			NodeType::Expression => self.visit_expr(&node.as_expression().unwrap()),
 			NodeType::Statement => self.visit_statement(&node.as_statement().unwrap())
@@ -31,16 +33,59 @@ impl<'a> Interpreter<'a> {
 	}
 
 	// need to do visiting as part of interpeter so that a HashMap can be kept
-	fn visit_expr(&mut self, expr: &Expression) -> Result<Primitive, String> {
+	fn visit_expr(&mut self, expr: &Expression) -> Result<TypedItem, String> {
 		match *expr {
 			Expression::BinOp(ref bexpr) => {
 				let left = self.visit_expr(&bexpr.left).unwrap();
 				let right = self.visit_expr(&bexpr.right).unwrap();
 				match bexpr.op {
-					BinOp::Plus => Ok(left + right),
-					BinOp::Minus => Ok(left - right),
-					BinOp::Mult => Ok(left * right),
-					BinOp::Div => Ok(left / right),
+					// TODO: convert the following to macros if possible
+					BinOp::Plus => {
+						match (left, right) {
+							(TypedItem::Primitive(l), TypedItem::Primitive(r)) => {
+								Ok((l + r).into())
+							},
+							(TypedItem::Object(l), TypedItem::Object(r)) => {
+								// apply custom add func here
+								Ok(TypedItem::from(Primitive::Empty))
+							},
+							_ => Err("Use of undefined add operator".to_string())
+						}
+					},
+					BinOp::Minus => {
+						match (left, right) {
+							(TypedItem::Primitive(l), TypedItem::Primitive(r)) => {
+								Ok((l-r).into())
+							},
+							(TypedItem::Object(l), TypedItem::Object(r)) => {
+								// TODO
+								Ok(TypedItem::from(Primitive::Empty))
+							},
+							_ => Err("Use of undefined subtraction operator".to_string())
+						}
+					},
+					BinOp::Mult => {
+						match (left, right) {
+							(TypedItem::Primitive(l), TypedItem::Primitive(r)) => {
+								Ok((l*r).into())
+							},
+							(TypedItem::Object(l), TypedItem::Object(r)) => {
+								Ok(TypedItem::from(Primitive::Empty))
+							},
+							_ => Err("Use of undefined mult operator".to_string())
+						}
+					},
+					BinOp::Div => {
+						match (left, right) {
+							(TypedItem::Primitive(l), TypedItem::Primitive(r)) => {
+								Ok((l/r).into())
+							},
+							(TypedItem::Object(l), TypedItem::Object(r)) => {
+								Ok(TypedItem::from(Primitive::Empty))
+							},
+							_ => Err("Use of undefined div operator".to_string())
+						}
+					},
 					BinOp::And => apply_logical(left, right, |first, second| first && second),
 					BinOp::Or => apply_logical(left, right, |first, second| first || second),
 					BinOp::GThan => apply_compare(left, right, |first, second| first > second),
@@ -57,9 +102,13 @@ impl<'a> Interpreter<'a> {
 			Expression::UnaryOp(ref op_expr) => {
 				let val = self.visit_expr(&op_expr.val);
 				match (&op_expr.op, val.clone()) {
-					(&UnaryOp::Plus, Ok(Primitive::Integer(_))) => val,
-					(&UnaryOp::Minus, Ok(Primitive::Integer(num))) => Ok(Primitive::Integer(-num)),
-					(&UnaryOp::Not, Ok(Primitive::Bool(bool_val))) => Ok(Primitive::Bool(!bool_val)),
+					(&UnaryOp::Plus, Ok(TypedItem::Primitive(Primitive::Integer(_)))) => val,
+					(&UnaryOp::Minus, Ok(TypedItem::Primitive(Primitive::Integer(num)))) => {
+						Ok(Primitive::Integer(-num).into())
+					},
+					(&UnaryOp::Not, Ok(TypedItem::Primitive(Primitive::Bool(bool_val)))) => {
+						Ok(Primitive::Bool(!bool_val).into())
+					},
 					_ => Err(String::from("invalid unary operation"))
 				}
 			},
@@ -67,13 +116,14 @@ impl<'a> Interpreter<'a> {
 				self.vmap.get(vname)
 						 .cloned()
 						 .ok_or_else(|| format!("no var named {}", vname))
+						 .map(|val| TypedItem::Value(Box::new(val)))
 			}
 			Expression::Value(ref prim) => {
 				let mut prim = prim.clone();
 				let _ = prim.unpack_mut::<List>().map(|list| self.expand_list(list));
 				Ok(prim)
 			},
-			_ => Ok(Primitive::Empty)
+			_ => Ok((Primitive::Empty).into())
 		}
 	}
 
@@ -101,48 +151,51 @@ impl<'a> Interpreter<'a> {
 	}
 
 	#[allow(single_match)]
-	fn visit_statement(&mut self, statement: &Statement) -> Result<Primitive, String> {
+	fn visit_statement(&mut self, statement: &Statement) -> Result<TypedItem, String> {
 		match *statement {
 			Statement::Compound{ref children} => {
 				for child in children {
 					//println!("{:?}\n", child);
 					if let Statement::Term(TermToken::Break) = *child {
-						return Ok(Primitive::LTerm(TermToken::Break));
+						return Ok((Primitive::LTerm(TermToken::Break)).into());
 					}
 					let result = self.visit(Box::new(child.clone())).unwrap();
-					if let Primitive::LTerm(TermToken::Break) = result {
+					if let TypedItem::Primitive(Primitive::LTerm(TermToken::Break)) = result {
 						return Ok(result);
 					}
 				}
-				Ok(Primitive::Empty)
+				Ok((Primitive::Empty).into())
 			},
 			Statement::If(ref if_stmt) => {
 				self.visit_expr(&if_stmt.pred)
-					.and_then(|val| Primitive::unpack::<bool>(&val)
+					.and_then(|val| val.unpack::<bool>()//Primitive::unpack::<bool>(&val)
 					.map_err(|_| "expected boolean expression in 'if' statement".to_string()))
 					.and_then(|value| {
 						if value {
 							self.visit_statement(&if_stmt.conseq)
 						} else {
 							if_stmt.alt.clone()
-							.map_or(Ok(Primitive::Empty), |alt| self.visit_statement(&alt))
+							.map_or(Ok((Primitive::Empty).into()), |alt| self.visit_statement(&alt))
 						}
 					})
 			},
 			Statement::While{ref pred, ref conseq} => {
 				let pred_val = self.visit_expr(pred);
-				while let Primitive::Bool(value) = self.visit_expr(pred).unwrap() {
+				while let Ok(Primitive::Bool(value)) = self.visit_expr(pred).unwrap().as_primitive() {
 					if value {
-						if let Primitive::LTerm(TermToken::Break) = self.visit_statement(conseq).unwrap() {
+						if let Ok(Primitive::LTerm(TermToken::Break)) = self.visit_statement(conseq)
+																		.unwrap()
+																		.as_primitive()
+						{
 							break;
 						}
 					}
 					else { break; }
 				}
-				pred_val.and_then(|val| Primitive::unpack::<bool>(&val)
-					.map_err(|_| "expected boolean expression in 'while' statement".to_string()))
+				pred_val.unwrap().unpack::<bool>()
+					.map_err(|_| "expected boolean expression in 'while' statement".to_string())
 					.unwrap();
-				Ok(Primitive::Empty)
+				Ok((Primitive::Empty).into())
 			},
 			Statement::For(ref fs) => {
 				if let Expression::Variable(ref vname) = fs.var {
@@ -154,16 +207,17 @@ impl<'a> Interpreter<'a> {
 					for elem in list.values {
 						let prim = match elem {
 							ListElem::Value(ref expr) => self.visit_expr(expr).unwrap(),
-							ListElem::SubList(ref list) => Primitive::Array(list.clone()),
+							ListElem::SubList(ref list) => Primitive::Array(list.clone()).into(),
 							_ => unreachable!()
 						};
-						self.vmap.insert(vname.clone(), prim);
+						let val = Value::new(vname.clone(), prim.typename(), Some(prim));
+						self.vmap.insert(vname.clone(), val);
 						match self.visit_statement(&fs.conseq) {
-							Ok(Primitive::LTerm(TermToken::Break)) => break,
+							Ok(TypedItem::Primitive(Primitive::LTerm(TermToken::Break))) => break,
 							_ => {}
 						};
 					}
-					Ok(Primitive::Empty)
+					Ok((Primitive::Empty).into())
 				} else {
 					Err("expected variable name in for loop".to_string())
 				}
@@ -172,14 +226,15 @@ impl<'a> Interpreter<'a> {
 				let val = self.visit_expr(value).unwrap();
 				match (var, value) {
 					(&Expression::Variable(ref vname), _) => {
-						self.vmap.insert(vname.clone(), val.clone());
+						let value = Value::new(vname.clone(), val.typename(), Some(val.clone()));
+						self.vmap.insert(vname.clone(), value);
 						Ok(val)
 					},
 					(&Expression::BrackOp(ref brack_expr), _) => {
 						// use List::get_mut_at for this 
 						let indices = brack_expr.indices.iter()
 						    .map(|ind| self.visit_expr(ind)
-								.and_then(|val| Primitive::unpack::<i32>(&val)
+								.and_then(|val| val.unpack::<i32>()
 								.map_err(|_| "invalid index: expected integer".to_string()))
 								.map(|val| val as usize)
 								.unwrap()
@@ -200,21 +255,21 @@ impl<'a> Interpreter<'a> {
 					panic!("class '{}' is already defined", obj.name());
 				}
 				self.types.insert(obj.name(), TypedItem::Object(obj.clone()));
-				Ok(Primitive::Empty)
+				Ok(TypedItem::from(Primitive::Empty))
 			},
 			Statement::Print(ref expr) => {
 				self.visit_expr(expr).map(|val| print!("{}", val)).unwrap();
-				Ok(Primitive::Empty)
+				Ok(TypedItem::from(Primitive::Empty))
 			},
 			Statement::Expr(ref expr) => self.visit_expr(expr),
-			_ => Ok(Primitive::Empty)
+			_ => Ok(TypedItem::from(Primitive::Empty))
 		}
 	}
 
-	fn visit_brackets(&mut self, expr: &BrackOpExpression) -> Result<Primitive, String> {
+	fn visit_brackets(&mut self, expr: &BrackOpExpression) -> Result<TypedItem, String> {
 		let indices = expr.indices.iter()
 		    .map(|ind| self.visit_expr(ind)
-				.and_then(|val| Primitive::unpack::<i32>(&val)
+				.and_then(|val| val.unpack::<i32>()
 				.map_err(|_| "invalid index: expected integer".to_string()))
 				.map(|val| val as usize)
 				.unwrap()
@@ -228,7 +283,7 @@ impl<'a> Interpreter<'a> {
 
 		match list_elem {
 			ListElem::Value(ref expr) => self.visit_expr(expr),
-			ListElem::SubList(ref list) => Ok(Primitive::Array(list.clone())),
+			ListElem::SubList(ref list) => Ok(Primitive::Array(list.clone()).into()),
 			ListElem::Range{..} => unreachable!()
 		}
 	}
@@ -260,11 +315,11 @@ impl<'a> Interpreter<'a> {
 		// convert range into a vector of Primitives
 		range.enumerate()
 			 .filter(|i| i.0 % step == 0)
-			 .map(|tup| ListElem::Value(Expression::Value(Primitive::Integer(tup.1))))
+			 .map(|tup| ListElem::Value(Expression::Value(Primitive::Integer(tup.1).into())))
 			 .collect::<Vec<_>>()
 	}
 
-	fn fetch_var_mut(&mut self, vname: &str) -> Result<&mut Primitive, String> {
+	fn fetch_var_mut(&mut self, vname: &str) -> Result<&mut Value, String> {
 		self.vmap.get_mut(vname).ok_or("variable does not exist in this scope".to_string())
 	}
 }
@@ -290,26 +345,29 @@ impl Visitable for Statement {
 	fn as_statement(self: Box<Self>) -> Option<Statement> { Some(*self) }
 }
 
-fn apply_logical<F>(left: Primitive, right: Primitive, f: F) -> Result<Primitive, String>
+fn apply_logical<F>(left: TypedItem, right: TypedItem, f: F) -> Result<TypedItem, String>
 	where F: Fn(bool, bool) -> bool
 {
 	match (left, right) {
-		(Primitive::Bool(first), Primitive::Bool(second)) => {
-			Ok(Primitive::Bool(f(first, second)))
+		(TypedItem::Primitive(Primitive::Bool(first)),
+		 TypedItem::Primitive(Primitive::Bool(second))) => {
+			Ok(Primitive::Bool(f(first, second)).into())
 		},
 		_ => Err(String::from("Use of undefined logical operator"))
 	}
 }
 
-fn apply_compare<F>(left: Primitive, right: Primitive, f: F) -> Result<Primitive, String>
+fn apply_compare<F>(left: TypedItem, right: TypedItem, f: F) -> Result<TypedItem, String>
 	where F: Fn(i32, i32) -> bool
 {
 	match (left, right) {
-		(Primitive::Integer(first), Primitive::Integer(second)) => {
-			Ok(Primitive::Bool(f(first, second)))
+		(TypedItem::Primitive(Primitive::Integer(first)),
+		 TypedItem::Primitive(Primitive::Integer(second))) => {
+			Ok(Primitive::Bool(f(first, second)).into())
 		},
-		(Primitive::Bool(first), Primitive::Bool(second)) => {
-			Ok(Primitive::Bool(first == second))
+		(TypedItem::Primitive(Primitive::Bool(first)),
+		 TypedItem::Primitive(Primitive::Bool(second))) => {
+			Ok(Primitive::Bool(first == second).into())
 		}
 		_ => Err(String::from("User of undefined comparison operation"))
 	}

@@ -53,19 +53,10 @@ impl<'a> Parser<'a> {
 			Some(Token::For) => self.for_loop(),
 			Some(Token::While) => self.while_loop(),
 			Some(Token::Ident(vname)) => {
-				// add type syntax here
 				let mut var = self.variable();
 				//println!("var {:?}", var);
 				//println!("curtok: {:?}", self.current_token);
-				if let Some(Token::Colon) = self.current_token {
-					self.eat_current();
-					if let Some(Token::Ident(ref val)) = self.current_token {
-						println!("type is {}", val);
-					}
-					self.eat_current();
-				} else {
-					var = self.parse_brackets(vname).unwrap_or(var);
-				}
+				var = self.parse_brackets(vname).unwrap_or(var);
 
 				match self.current_token {
 					Some(Token::Equals) => self.assignment(var),
@@ -82,6 +73,7 @@ impl<'a> Parser<'a> {
 			},
 			Some(Token::Print) => self.print_statement(),
 			Some(Token::Def) => self.define(),
+			Some(Token::Let) => self.parse_let(),
 			Some(_) => { Statement::Expr(self.expr(0)) },
 			None => Statement::Empty
 		}
@@ -97,7 +89,7 @@ impl<'a> Parser<'a> {
 					// TO COMPLETE
 				},
 				Token::RCurl => break,
-				_ => {}
+				_ => panic!("expected semicolon")
 			}
 			match self.current_token {
 				Some(Token::RCurl) | None => break,
@@ -130,6 +122,26 @@ impl<'a> Parser<'a> {
 			alt = Some(self.compound_statement());
 		}
 		Statement::If(Box::new(IfStatement::new(pred, conseq, alt)))
+	}
+
+	fn parse_let(&mut self) -> Statement {
+		self.eat(Token::Let);
+		let var = self.variable();
+		self.eat(Token::Colon);
+		let tyname = match self.current_token {
+			Some(Token::Ident(ref tname)) => tname.clone(),
+			_ => panic!("expected type specification in variable declaration")
+		};
+		self.eat_current();
+		let assign = match self.current_token.clone() {
+			Some(Token::Equals) => Some(self.assignment(var.clone())),
+			_ => None
+		};
+		Statement::Let(Box::new(
+			LetStatement { vname: var.as_variable().unwrap(),
+		 				   ty: tyname,
+		 				   assign: assign
+		 				 }))
 	}
 
 	fn assignment(&mut self, var: Expression) -> Statement {
@@ -201,15 +213,15 @@ impl<'a> Parser<'a> {
 			},
 			Token::Integer(val) => {
 				self.eat(token.clone());
-				Expression::Value(Primitive::Integer(val))
+				Expression::from(Primitive::Integer(val))
 			},
 			Token::Bool(val) => {
 				self.eat(token.clone());
-				Expression::Value(Primitive::Bool(val))
+				Expression::from(Primitive::Bool(val))
 			},
 			Token::Quot => {
 				let string = self.string();
-				Expression::Value(Primitive::Str(string))
+				Expression::from(Primitive::Str(string))
 			},
 			Token::LBrace => self.array(),
 			Token::LParen => {
