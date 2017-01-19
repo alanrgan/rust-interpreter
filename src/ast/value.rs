@@ -1,5 +1,4 @@
-use super::types::{TypedItem, Primitive};
-use super::list::List;
+use super::types::TypedItem;
 
 #[derive(Clone, Debug)]
 pub struct Value {

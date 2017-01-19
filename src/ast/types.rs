@@ -54,7 +54,7 @@ pub enum Primitive {
 pub enum TypedItem {
 	Primitive(Primitive),
 	Object(Object),
-	Value(Box<Value>)
+	Value(Box<Value>) // essentially a named reference
 }
 
 impl TypedItem {
@@ -89,6 +89,10 @@ impl TypedItem {
 			_ => Err(())
 		}
 	}
+
+	pub fn empty() -> TypedItem {
+		TypedItem::from(Primitive::Empty)
+	}
 }
 
 impl fmt::Display for TypedItem {
@@ -97,6 +101,11 @@ impl fmt::Display for TypedItem {
 			TypedItem::Primitive(Primitive::Bool(ref val)) => write!(f, "{}", val),
 			TypedItem::Primitive(Primitive::Integer(ref val)) => write!(f, "{}", val),
 			TypedItem::Primitive(Primitive::Str(ref val)) => write!(f, "{}", val),
+			TypedItem::Value(ref val) => {
+				write!(f, "'{}': {}", val.name.clone(),
+					   val.value.clone()
+						  .unwrap_or(TypedItem::from(Primitive::Str("None".to_string()))))
+			},
 			_ => write!(f, "")
 		}
 	}

@@ -65,10 +65,10 @@ impl From<TypedItem> for ListElem {
 
 impl List {
 	// returns reference to mutable vector
-	pub fn get_mut_at<'b>(nested_arr: &'b mut Value, 
+	pub fn get_mut_at<'b>(nested_arr: &'b mut Option<Value>, 
 						  indices: &[usize]) -> Option<&'b mut ListElem> {
 		let nested_arr = {
-			if let Some(TypedItem::Primitive(ref mut prim)) = nested_arr.value {
+			if let Some(TypedItem::Primitive(ref mut prim)) = nested_arr.as_mut().unwrap().value {
 				prim
 			} else {
 				panic!("Expected list, not object")

@@ -40,6 +40,9 @@ impl<'a> Parser<'a> {
 		//println!("Eating {:?}", current_token);
 		self.prev_token = current_token;
 		self.current_token = self.lexer.next_token();
+		if let Some(Token::BlockStart) = self.current_token {
+			self.block_comment();
+		}
 	}
 
 	pub fn parse(&mut self) -> Box<Visitable> {
@@ -74,8 +77,8 @@ impl<'a> Parser<'a> {
 			Some(Token::Print) => self.print_statement(),
 			Some(Token::Def) => self.define(),
 			Some(Token::Let) => self.parse_let(),
-			Some(_) => { Statement::Expr(self.expr(0)) },
-			None => Statement::Empty
+			Some(Token::Comment) | Some(Token::BlockStart) | None => Statement::Empty,
+			Some(_) => { Statement::Expr(self.expr(0)) }
 		}
 	}
 
@@ -85,11 +88,14 @@ impl<'a> Parser<'a> {
 			match *tok {
 				Token::Semi => self.eat(Token::Semi),
 				Token::Comment => {
-					self.eat(Token::Comment);
-					// TO COMPLETE
+					self.comment();
+				},
+				Token::BlockStart => {
+					self.block_comment();
+					//continue;
 				},
 				Token::RCurl => break,
-				_ => panic!("expected semicolon")
+				_ => panic!("expected semicolon, got {:?}", tok)
 			}
 			match self.current_token {
 				Some(Token::RCurl) | None => break,
@@ -124,13 +130,31 @@ impl<'a> Parser<'a> {
 		Statement::If(Box::new(IfStatement::new(pred, conseq, alt)))
 	}
 
+	fn comment(&mut self) {
+		self.eat(Token::Comment);
+		self.lexer.consume_until(|c| c == '\n');
+		self.lexer.iter.next();
+		self.current_token = self.lexer.next_token();
+	}
+
+	fn block_comment(&mut self) {
+		loop {
+			self.eat_current();
+			if let Some(Token::BlockEnd) = self.current_token {
+				self.eat_current();
+				break;
+			}
+		}
+	}
+
 	fn parse_let(&mut self) -> Statement {
 		self.eat(Token::Let);
 		let var = self.variable();
 		self.eat(Token::Colon);
 		let tyname = match self.current_token {
 			Some(Token::Ident(ref tname)) => tname.clone(),
-			_ => panic!("expected type specification in variable declaration")
+			_ => panic!("expected type specification in variable declaration, got {:?}",
+						 self.current_token)
 		};
 		self.eat_current();
 		let assign = match self.current_token.clone() {

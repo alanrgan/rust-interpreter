@@ -1,6 +1,9 @@
 #![cfg_attr(feature = "clippy", feature(plugin))]
 #![cfg_attr(feature = "clippy", plugin(clippy))]
 #![cfg_attr(feature = "clippy", allow(boxed_local))]
+#![allow(dead_code)]
+#![allow(unknown_lints)]
+#![allow(unused_variables)]
 
 #[macro_use]
 

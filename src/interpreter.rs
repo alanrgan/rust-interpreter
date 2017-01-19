@@ -5,7 +5,7 @@ use std::collections::HashMap;
 pub struct Interpreter<'a> {
 	parser: Parser<'a>,
 	// TODO: change to <String, Value>
-	pub vmap: HashMap<String, Value>, // map variable name to value
+	pub vmap: HashMap<String, Option<Value>>, // map variable name to value
 	// This HashMap is used to check if requested type/class members are valid
 	pub types: HashMap<String, TypedItem>
 }
@@ -115,8 +115,9 @@ impl<'a> Interpreter<'a> {
 			Expression::Variable(ref vname) => {
 				self.vmap.get(vname)
 						 .cloned()
-						 .ok_or_else(|| format!("no var named {}", vname))
-						 .map(|val| TypedItem::Value(Box::new(val)))
+						 .ok_or_else(|| format!("no var named {}", vname.clone()))
+						 .map(|val| TypedItem::Value(Box::new(
+						 	val.expect(&format!("Variable '{}' not initialized!", vname)))))
 			}
 			Expression::Value(ref prim) => {
 				let mut prim = prim.clone();
@@ -168,7 +169,7 @@ impl<'a> Interpreter<'a> {
 			},
 			Statement::If(ref if_stmt) => {
 				self.visit_expr(&if_stmt.pred)
-					.and_then(|val| val.unpack::<bool>()//Primitive::unpack::<bool>(&val)
+					.and_then(|val| val.unpack::<bool>()
 					.map_err(|_| "expected boolean expression in 'if' statement".to_string()))
 					.and_then(|value| {
 						if value {
@@ -211,7 +212,7 @@ impl<'a> Interpreter<'a> {
 							_ => unreachable!()
 						};
 						let val = Value::new(vname.clone(), prim.typename(), Some(prim));
-						self.vmap.insert(vname.clone(), val);
+						self.vmap.insert(vname.clone(), Some(val));
 						match self.visit_statement(&fs.conseq) {
 							Ok(TypedItem::Primitive(Primitive::LTerm(TermToken::Break))) => break,
 							_ => {}
@@ -227,7 +228,9 @@ impl<'a> Interpreter<'a> {
 				match (var, value) {
 					(&Expression::Variable(ref vname), _) => {
 						let value = Value::new(vname.clone(), val.typename(), Some(val.clone()));
-						self.vmap.insert(vname.clone(), value);
+						let elem = self.vmap.get_mut(vname)
+								   .expect(&format!("Variable '{}' not declared", vname));
+						*elem = Some(value);//self.vmap.insert(vname.clone(), value);
 						Ok(val)
 					},
 					(&Expression::BrackOp(ref brack_expr), _) => {
@@ -250,6 +253,19 @@ impl<'a> Interpreter<'a> {
 					_ => unreachable!()
 				}
 			},
+			Statement::Let(ref lst) => {
+				self.vmap.insert(lst.vname.clone(), None);
+				let assigned_val = {
+					if let Some(ref statement) = lst.assign {
+						Some(self.visit_statement(statement).unwrap())
+					} else {
+						None
+					}
+				};
+				let val = Value::new(lst.vname.clone(), lst.ty.clone(), assigned_val.clone());
+				self.vmap.insert(lst.vname.clone(), val.into());
+				Ok(assigned_val.unwrap_or(TypedItem::from(Primitive::Empty)))
+			},
 			Statement::Define(ref obj) => {
 				if self.types.contains_key(&obj.name()) {
 					panic!("class '{}' is already defined", obj.name());
@@ -258,12 +274,21 @@ impl<'a> Interpreter<'a> {
 				Ok(TypedItem::from(Primitive::Empty))
 			},
 			Statement::Print(ref expr) => {
-				self.visit_expr(expr).map(|val| print!("{}", val)).unwrap();
+				self.visit_expr(expr).map(|val| self.print_item(val)).unwrap();
 				Ok(TypedItem::from(Primitive::Empty))
 			},
 			Statement::Expr(ref expr) => self.visit_expr(expr),
 			_ => Ok(TypedItem::from(Primitive::Empty))
 		}
+	}
+
+	fn print_item(&self, t: TypedItem) {
+		match t {
+			TypedItem::Value(v) => {
+				self.print_item(v.value.unwrap_or(TypedItem::empty()))
+			},
+			_ => print!("{}", t)
+		};
 	}
 
 	fn visit_brackets(&mut self, expr: &BrackOpExpression) -> Result<TypedItem, String> {
@@ -319,8 +344,9 @@ impl<'a> Interpreter<'a> {
 			 .collect::<Vec<_>>()
 	}
 
-	fn fetch_var_mut(&mut self, vname: &str) -> Result<&mut Value, String> {
-		self.vmap.get_mut(vname).ok_or("variable does not exist in this scope".to_string())
+	fn fetch_var_mut(&mut self, vname: &str) -> Result<&mut Option<Value>, String> {
+		self.vmap.get_mut(vname)
+				 .ok_or("variable does not exist in this scope".to_string())
 	}
 }
 
