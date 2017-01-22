@@ -6,6 +6,7 @@ pub enum Token {
 	Integer(i32),
 	Bool(bool),
 	Ident(String),
+	Macro(String),
 	Class,
 	Def,
 	Equals,

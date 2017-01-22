@@ -31,7 +31,7 @@ impl Object {
 		Ok(())
 	}
 
-	pub fn get_func(&self, name: &String) -> Option<&Function> {
+	pub fn get_func(&self, name: &str) -> Option<&Function> {
 		self.funcs.get(name)
 	}
 
@@ -69,7 +69,7 @@ impl TypedItem {
 		}
 	}
 
-	pub fn as_primitive(self) -> Result<Primitive, ()> {
+	pub fn into_primitive(self) -> Result<Primitive, ()> {
 		match self {
 			TypedItem::Primitive(some) => Ok(some),
 			_ => Err(())

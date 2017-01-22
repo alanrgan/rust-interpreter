@@ -74,6 +74,13 @@ impl<'a> Parser<'a> {
 				self.eat(Token::Break);
 				Statement::Term(TermToken::Break) 
 			},
+			Some(Token::Macro(macro_name)) => {
+				self.eat_current();
+				self.eat(Token::LParen);
+				let mstmt = Box::new(self.statement());
+				self.eat(Token::RParen);
+				Statement::Macro(Box::new(Macro::new(macro_name, mstmt)))
+			},
 			Some(Token::Print) => self.print_statement(),
 			Some(Token::Def) => self.define(),
 			Some(Token::Let) => self.parse_let(),
@@ -221,11 +228,14 @@ impl<'a> Parser<'a> {
 	fn define(&mut self) -> Statement {
 		self.eat(Token::Def);
 		self.eat(Token::Class);
+		let rval: Statement;
 		if let Some(Token::Ident(ref tname)) = self.current_token {
-			Statement::Define(Object::new(tname.clone()))
+			rval = Statement::Define(Object::new(tname.clone()));
 		} else {
-			Statement::Empty
+			rval = Statement::Empty;
 		}
+		self.eat_current();
+		rval
 	}
 
 	fn factor(&mut self) -> Expression {

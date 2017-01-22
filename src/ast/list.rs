@@ -64,7 +64,7 @@ impl From<TypedItem> for ListElem {
 }
 
 impl List {
-	// returns reference to mutable vector
+	// returns reference to mutable elem
 	pub fn get_mut_at<'b>(nested_arr: &'b mut Option<Value>, 
 						  indices: &[usize]) -> Option<&'b mut ListElem> {
 		let nested_arr = {

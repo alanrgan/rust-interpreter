@@ -1,5 +1,8 @@
+extern crate itertools;
+
 use std::str::Chars;
 use std::iter::Peekable;
+use self::itertools::multipeek;
 
 use ast::{Token, KeywordBank};
 
@@ -27,6 +30,13 @@ impl<'a> Lexer<'a> {
 						let var: String = self.consume_while(|c| c.is_alphanumeric() || c == '_')
 								.into_iter()
 								.collect();
+						let mut iter = self.iter.clone();
+						if let Some('!') = iter.next() {
+							if let Some('(') = iter.next() {
+								self.iter.next();
+								return Some(Token::Macro(var));
+							}
+						}
 						return self.keywords.try_fetch(var.clone(), Token::Ident(var));
 					},
 					'0' ... '9' => {

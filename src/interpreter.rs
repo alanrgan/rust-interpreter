@@ -1,5 +1,6 @@
 use ast::*;
 use parser::Parser;
+use std::fmt::{Formatter, Debug, Error};
 use std::collections::HashMap;
 
 pub struct Interpreter<'a> {
@@ -14,7 +15,7 @@ impl<'a> Interpreter<'a> {
 	pub fn new(parser: Parser) -> Interpreter {
 		let mut types = HashMap::new();
 		types.insert("bool".to_string(), TypedItem::from(Primitive::Bool(true)));
-		types.insert("string".to_string(), TypedItem::from(Primitive::Str("".to_string())));
+		types.insert("str".to_string(), TypedItem::from(Primitive::Str("".to_string())));
 		types.insert("int".to_string(), TypedItem::from(Primitive::Integer(0)));
 		types.insert("list".to_string(), TypedItem::from(Primitive::Array(List::from(vec![0]))));
 		Interpreter { parser: parser, vmap: HashMap::new(), types: types }
@@ -47,7 +48,7 @@ impl<'a> Interpreter<'a> {
 							},
 							(TypedItem::Object(l), TypedItem::Object(r)) => {
 								// apply custom add func here
-								Ok(TypedItem::from(Primitive::Empty))
+								Ok(TypedItem::empty())
 							},
 							_ => Err("Use of undefined add operator".to_string())
 						}
@@ -59,7 +60,7 @@ impl<'a> Interpreter<'a> {
 							},
 							(TypedItem::Object(l), TypedItem::Object(r)) => {
 								// TODO
-								Ok(TypedItem::from(Primitive::Empty))
+								Ok(TypedItem::empty())
 							},
 							_ => Err("Use of undefined subtraction operator".to_string())
 						}
@@ -70,7 +71,7 @@ impl<'a> Interpreter<'a> {
 								Ok((l*r).into())
 							},
 							(TypedItem::Object(l), TypedItem::Object(r)) => {
-								Ok(TypedItem::from(Primitive::Empty))
+								Ok(TypedItem::empty())
 							},
 							_ => Err("Use of undefined mult operator".to_string())
 						}
@@ -81,7 +82,7 @@ impl<'a> Interpreter<'a> {
 								Ok((l/r).into())
 							},
 							(TypedItem::Object(l), TypedItem::Object(r)) => {
-								Ok(TypedItem::from(Primitive::Empty))
+								Ok(TypedItem::empty())
 							},
 							_ => Err("Use of undefined div operator".to_string())
 						}
@@ -160,9 +161,10 @@ impl<'a> Interpreter<'a> {
 					if let Statement::Term(TermToken::Break) = *child {
 						return Ok((Primitive::LTerm(TermToken::Break)).into());
 					}
-					let result = self.visit(Box::new(child.clone())).unwrap();
-					if let TypedItem::Primitive(Primitive::LTerm(TermToken::Break)) = result {
-						return Ok(result);
+					let result = self.visit(Box::new(child.clone()));
+					if let Err(_) = result { return result }
+					if let Ok(TypedItem::Primitive(Primitive::LTerm(TermToken::Break))) = result {
+						return result;
 					}
 				}
 				Ok((Primitive::Empty).into())
@@ -182,11 +184,11 @@ impl<'a> Interpreter<'a> {
 			},
 			Statement::While{ref pred, ref conseq} => {
 				let pred_val = self.visit_expr(pred);
-				while let Ok(Primitive::Bool(value)) = self.visit_expr(pred).unwrap().as_primitive() {
+				while let Ok(Primitive::Bool(value)) = self.visit_expr(pred).unwrap().into_primitive() {
 					if value {
 						if let Ok(Primitive::LTerm(TermToken::Break)) = self.visit_statement(conseq)
 																		.unwrap()
-																		.as_primitive()
+																		.into_primitive()
 						{
 							break;
 						}
@@ -224,14 +226,22 @@ impl<'a> Interpreter<'a> {
 				}
 			},
 			Statement::Assign{ref var, ref value} => {
+				// TODO: Fix type checking.
+				// Right now, works for declare-then-initialize
+				// but not for declare-and-initialize
 				let val = self.visit_expr(value).unwrap();
 				match (var, value) {
 					(&Expression::Variable(ref vname), _) => {
-						let value = Value::new(vname.clone(), val.typename(), Some(val.clone()));
 						let elem = self.vmap.get_mut(vname)
 								   .expect(&format!("Variable '{}' not declared", vname));
-						*elem = Some(value);//self.vmap.insert(vname.clone(), value);
-						Ok(val)
+					    let value = Value::new(vname.clone(), val.typename(), Some(val.clone()));
+					    let expected_type = elem.clone().unwrap().ty_name;
+					    if expected_type != val.typename() {
+					    	Err(format!("mismatched types: expected {}, found {}, {:?}", expected_type, val.typename(), val))
+					    } else {
+							*elem = Some(value);
+							Ok(val)
+						}
 					},
 					(&Expression::BrackOp(ref brack_expr), _) => {
 						// use List::get_mut_at for this 
@@ -254,38 +264,54 @@ impl<'a> Interpreter<'a> {
 				}
 			},
 			Statement::Let(ref lst) => {
-				self.vmap.insert(lst.vname.clone(), None);
+				let ty = lst.ty.clone();
+				let val = Value::new(lst.vname.clone(), ty.clone(), Some(TypedItem::empty()));
+				self.vmap.insert(lst.vname.clone(), val.into());
 				let assigned_val = {
 					if let Some(ref statement) = lst.assign {
-						Some(self.visit_statement(statement).unwrap())
+						Some(try!(self.visit_statement(statement)))
 					} else {
 						None
 					}
 				};
-				let val = Value::new(lst.vname.clone(), lst.ty.clone(), assigned_val.clone());
-				self.vmap.insert(lst.vname.clone(), val.into());
-				Ok(assigned_val.unwrap_or(TypedItem::from(Primitive::Empty)))
+				if self.types.contains_key(&ty) {
+					let val = Value::new(lst.vname.clone(), ty.clone(), assigned_val.clone());
+					self.vmap.insert(lst.vname.clone(), val.into());
+					Ok(assigned_val.unwrap_or_else(TypedItem::empty))
+				} else {
+					Err(format!("Type {} is not defined", ty))
+				}
 			},
 			Statement::Define(ref obj) => {
 				if self.types.contains_key(&obj.name()) {
 					panic!("class '{}' is already defined", obj.name());
 				}
 				self.types.insert(obj.name(), TypedItem::Object(obj.clone()));
-				Ok(TypedItem::from(Primitive::Empty))
+				Ok(TypedItem::empty())
 			},
+			Statement::Macro(ref mac) => {
+				if mac.name == "fail" {
+					let result = self.visit(mac.clone().arg);
+					if let Ok(_) = result {
+						return Err("fail error: statement did not panic".into())
+					}
+				}
+				Ok(TypedItem::empty())
+			}
 			Statement::Print(ref expr) => {
 				self.visit_expr(expr).map(|val| self.print_item(val)).unwrap();
-				Ok(TypedItem::from(Primitive::Empty))
+				Ok(TypedItem::empty())
 			},
 			Statement::Expr(ref expr) => self.visit_expr(expr),
-			_ => Ok(TypedItem::from(Primitive::Empty))
+			_ => Ok(TypedItem::empty())
 		}
 	}
 
 	fn print_item(&self, t: TypedItem) {
+		// allow overriding of print function
 		match t {
 			TypedItem::Value(v) => {
-				self.print_item(v.value.unwrap_or(TypedItem::empty()))
+				self.print_item(v.value.unwrap_or_else(TypedItem::empty))
 			},
 			_ => print!("{}", t)
 		};
@@ -361,6 +387,10 @@ impl Visitable for Expression {
 	fn as_expression(self: Box<Self>) -> Option<Expression> { Some(*self) }
 
 	fn as_statement(self: Box<Self>) -> Option<Statement> { None }
+
+	fn box_clone(&self) -> Box<Visitable> { Box::new(self.clone()) }
+
+	fn box_fmt(&self, f: &mut Formatter) -> Result<(), Error> { self.fmt(f) }
 }
 
 impl Visitable for Statement {
@@ -369,6 +399,10 @@ impl Visitable for Statement {
 	fn as_expression(self: Box<Self>) -> Option<Expression> { None }
 
 	fn as_statement(self: Box<Self>) -> Option<Statement> { Some(*self) }
+
+	fn box_clone(&self) -> Box<Visitable> { Box::new(self.clone()) }
+
+	fn box_fmt(&self, f: &mut Formatter) -> Result<(), Error> { self.fmt(f) }
 }
 
 fn apply_logical<F>(left: TypedItem, right: TypedItem, f: F) -> Result<TypedItem, String>

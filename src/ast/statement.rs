@@ -1,6 +1,7 @@
 use super::expression::*;
 use super::token::*;
 use super::types::*;
+use super::ast::Visitable;
 
 #[derive(Debug, Clone)]
 pub enum Statement {
@@ -12,10 +13,17 @@ pub enum Statement {
 	Print(Expression),
 	Define(Object),
 	Let(Box<LetStatement>),
+	Macro(Box<Macro>),
 	// temporary
 	Expr(Expression),
 	Term(TermToken),
 	Empty
+}
+
+#[derive(Debug, Clone)]
+pub struct Macro {
+	pub name: String,
+	pub arg: Box<Visitable>
 }
 
 #[derive(Debug, Clone)]
@@ -46,5 +54,11 @@ impl IfStatement {
 			conseq: conseq,
 			alt: alt
 		}
+	}
+}
+
+impl Macro {
+	pub fn new(name: String, arg: Box<Visitable>) -> Macro {
+		Macro { name: name, arg: arg }
 	}
 }
