@@ -1,27 +1,22 @@
 use ast::*;
 use parser::Parser;
 use std::fmt::{Formatter, Debug, Error};
-use std::collections::HashMap;
 
 pub struct Interpreter<'a> {
 	parser: Parser<'a>,
-	// TODO: change to <String, Value>
-	pub vmap: HashMap<String, Option<Value>>, // map variable name to value
-	// This HashMap is used to check if requested type/class members are valid
-	pub types: HashMap<String, TypedItem>,
-	// scope stack, last elem is the top-most
-	pub envs: Vec<Env>
+	/*pub vmap: HashMap<String, Option<Value>>, // map variable name to value
+	pub types: HashMap<String, TypedItem>,*/
+	pub envs: ScopeList
 }
 
 impl<'a> Interpreter<'a> {
 	pub fn new(parser: Parser) -> Interpreter {
-		let mut types = HashMap::new();
-		types.insert("bool".to_string(), TypedItem::from(Primitive::Bool(true)));
-		types.insert("str".to_string(), TypedItem::from(Primitive::Str("".to_string())));
-		types.insert("int".to_string(), TypedItem::from(Primitive::Integer(0)));
-		types.insert("list".to_string(), TypedItem::from(Primitive::Array(List::from(vec![0]))));
-		let evec: Vec<Env> = vec![Env::new(-1, 0)];
-		Interpreter { parser: parser, vmap: HashMap::new(), types: types, envs: evec }
+		let mut slist = ScopeList::new();
+		Env::set_type(&mut slist, "bool".into(), TypedItem::from(Primitive::Bool(true)), false);
+		Env::set_type(&mut slist, "str".into(), TypedItem::from(Primitive::Str("".into())), false);
+		Env::set_type(&mut slist, "int".into(), TypedItem::from(Primitive::Integer(0)), false);
+		Env::set_type(&mut slist, "list".into(), TypedItem::from(Primitive::Array(List::from(vec![0]))), false);
+		Interpreter { parser: parser, envs: slist }
 	}
 
 	pub fn interpret(&mut self) -> TypedItem {
@@ -117,11 +112,16 @@ impl<'a> Interpreter<'a> {
 				}
 			},
 			Expression::Variable(ref vname) => {
-				self.vmap.get(vname)
+				let res = self.envs.current_scope()
+						 .get_var(vname)
 						 .cloned()
-						 .ok_or_else(|| format!("no var named {}", vname.clone()))
-						 .map(|val| TypedItem::Value(Box::new(
-						 	val.expect(&format!("Variable '{}' not initialized!", vname)))))
+						 .ok_or_else(|| format!("No var named '{}' found in scope", vname.clone()))
+						 .map(|val| val.value);
+				match res {
+					Ok(Some(val)) => Ok(val),
+					Ok(None) => Err(format!("Variable '{}' not initialized!", vname)),
+					_ => Err(res.err().unwrap())
+				}
 			}
 			Expression::Value(ref prim) => {
 				let mut prim = prim.clone();
@@ -159,6 +159,7 @@ impl<'a> Interpreter<'a> {
 	fn visit_statement(&mut self, statement: &Statement) -> Result<TypedItem, String> {
 		match *statement {
 			Statement::Compound{ref children} => {
+				self.envs.extend();
 				for child in children {
 					//println!("{:?}\n", child);
 					if let Statement::Term(TermToken::Break) = *child {
@@ -170,6 +171,7 @@ impl<'a> Interpreter<'a> {
 						return result;
 					}
 				}
+				self.envs.pop();
 				Ok((Primitive::Empty).into())
 			},
 			Statement::If(ref if_stmt) => {
@@ -217,7 +219,8 @@ impl<'a> Interpreter<'a> {
 							_ => unreachable!()
 						};
 						let val = Value::new(vname.clone(), prim.typename(), Some(prim));
-						self.vmap.insert(vname.clone(), Some(val));
+						Env::set(&mut self.envs, vname.clone(), val, false);
+						//self.vmap.insert(vname.clone(), Some(val));
 						match self.visit_statement(&fs.conseq) {
 							Ok(TypedItem::Primitive(Primitive::LTerm(TermToken::Break))) => break,
 							_ => {}
@@ -232,16 +235,19 @@ impl<'a> Interpreter<'a> {
 				let val = self.visit_expr(value).unwrap();
 				match (var, value) {
 					(&Expression::Variable(ref vname), _) => {
-						let elem = self.vmap.get_mut(vname)
-								   .expect(&format!("Variable '{}' not declared", vname));
-					    let value = Value::new(vname.clone(), val.typename(), Some(val.clone()));
-					    let expected_type = elem.clone().unwrap().ty_name;
-					    if expected_type != val.typename() {
-					    	Err(format!("mismatched types: expected {}, found {}, {:?}", expected_type, val.typename(), val))
-					    } else {
-							*elem = Some(value);
-							Ok(val)
+						let value = Value::new(vname.clone(), val.typename(), Some(val.clone()));
+						{
+							let elem = self.envs.current_scope().get_mut(vname)
+									   .expect(&format!("Variable '{}' not declared", vname));
+						
+						    let expected_type = elem.clone().unwrap().ty_name;
+						    if expected_type != val.typename() {
+						    	return Err(format!("mismatched types: expected {}, found {}, {:?}",
+						    			expected_type, val.typename(), val));
+						    }
 						}
+					    Env::set(&mut self.envs, vname.clone(), value, false);
+						Ok(val)
 					},
 					(&Expression::BrackOp(ref brack_expr), _) => {
 						let indices = brack_expr.indices.iter()
@@ -265,7 +271,8 @@ impl<'a> Interpreter<'a> {
 			Statement::Let(ref lst) => {
 				let ty = lst.ty.clone();
 				let val = Value::new(lst.vname.clone(), ty.clone(), Some(TypedItem::empty()));
-				self.vmap.insert(lst.vname.clone(), val.into());
+				//self.vmap.insert(lst.vname.clone(), val.into());
+				Env::set(&mut self.envs, lst.vname.clone(), val.into(), false);
 				let assigned_val = {
 					if let Some(ref statement) = lst.assign {
 						Some(try!(self.visit_statement(statement)))
@@ -274,22 +281,19 @@ impl<'a> Interpreter<'a> {
 					}
 				};
 
-				Env::set(&mut self.envs, "test".into(), Value::new("".into(), "".into(), None), true);
-
-
-				if self.types.contains_key(&ty) {
+				if self.envs.current_scope().types.contains_key(&ty) {
 					let val = Value::new(lst.vname.clone(), ty.clone(), assigned_val.clone());
-					self.vmap.insert(lst.vname.clone(), val.into());
+					Env::set(&mut self.envs, lst.vname.clone(), val.into(), false);
 					Ok(assigned_val.unwrap_or_else(TypedItem::empty))
 				} else {
 					Err(format!("Type {} is not defined", ty))
 				}
 			},
 			Statement::Define(ref obj) => {
-				if self.types.contains_key(&obj.name()) {
+				if self.envs.current_scope().types.contains_key(&obj.name()) {
 					panic!("class '{}' is already defined", obj.name());
 				}
-				self.types.insert(obj.name(), TypedItem::Object(obj.clone()));
+				Env::set_type(&mut self.envs, obj.name(), TypedItem::Object(obj.clone()), false);
 				Ok(TypedItem::empty())
 			},
 			Statement::Macro(ref mac) => {
@@ -302,8 +306,9 @@ impl<'a> Interpreter<'a> {
 				Ok(TypedItem::empty())
 			}
 			Statement::Print(ref expr) => {
-				self.visit_expr(expr).map(|val| self.print_item(val)).unwrap();
-				Ok(TypedItem::empty())
+				let res = self.visit_expr(expr);
+				let _ = res.clone().map(|val| self.print_item(val));
+				res
 			},
 			Statement::Expr(ref expr) => self.visit_expr(expr),
 			_ => Ok(TypedItem::empty())
@@ -374,7 +379,7 @@ impl<'a> Interpreter<'a> {
 	}
 
 	fn fetch_var_mut(&mut self, vname: &str) -> Result<&mut Option<Value>, String> {
-		self.vmap.get_mut(vname)
+		self.envs.current_scope().get_mut(vname)
 				 .ok_or("variable does not exist in this scope".to_string())
 	}
 }
@@ -423,7 +428,23 @@ fn apply_logical<F>(left: TypedItem, right: TypedItem, f: F) -> Result<TypedItem
 fn apply_compare<F>(left: TypedItem, right: TypedItem, f: F) -> Result<TypedItem, String>
 	where F: Fn(i32, i32) -> bool
 {
-	match (left, right) {
+	let ll = {
+		if let TypedItem::Value(ref val) = left.clone() {
+			if let Some(ref v) = val.value {
+				v.clone()
+			} else { left }
+		} else { left }
+	};
+
+	let rr = {
+		if let TypedItem::Value(ref val) = right.clone() {
+			if let Some(ref v) = val.value {
+				v.clone()
+			} else { right }
+		} else { right }
+	};
+
+	match (ll, rr) {
 		(TypedItem::Primitive(Primitive::Integer(first)),
 		 TypedItem::Primitive(Primitive::Integer(second))) => {
 			Ok(Primitive::Bool(f(first, second)).into())
@@ -432,6 +453,6 @@ fn apply_compare<F>(left: TypedItem, right: TypedItem, f: F) -> Result<TypedItem
 		 TypedItem::Primitive(Primitive::Bool(second))) => {
 			Ok(Primitive::Bool(first == second).into())
 		}
-		_ => Err(String::from("User of undefined comparison operation"))
+		_ => Err(String::from("Use of undefined comparison operation"))
 	}
 }

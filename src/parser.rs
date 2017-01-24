@@ -102,7 +102,13 @@ impl<'a> Parser<'a> {
 					//continue;
 				},
 				Token::RCurl => break,
-				_ => panic!("expected semicolon, got {:?}", tok)
+				_ => {
+					match *nodes.last().unwrap() {
+						Statement::If(_) | Statement::For(_) |
+						Statement::While{..} => {},
+						_ => panic!("expected semicolon, got {:?}", tok)
+					}
+				}
 			}
 			match self.current_token {
 				Some(Token::RCurl) | None => break,

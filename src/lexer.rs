@@ -2,7 +2,6 @@ extern crate itertools;
 
 use std::str::Chars;
 use std::iter::Peekable;
-use self::itertools::multipeek;
 
 use ast::{Token, KeywordBank};
 

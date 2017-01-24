@@ -1,23 +1,48 @@
 use std::collections::HashMap;
 use super::value::*;
 use super::func::*;
+use super::types::TypedItem;
+
+#[derive(Clone, Debug)]
+pub struct ScopeList {
+	pub envs: Vec<Env>
+}
+
+impl ScopeList {
+	pub fn new() -> ScopeList {
+		ScopeList { envs: vec![ Env::new() ] }
+	}
+
+	pub fn current_scope(&mut self) -> &mut Env {
+		self.envs.last_mut().expect("")
+	}
+
+	pub fn extend(&mut self) {
+		let scope = self.current_scope().extend();
+		self.envs.push(scope);
+	}
+
+	pub fn pop(&mut self) {
+		self.envs.pop();
+	}
+
+	pub fn global_scope(&mut self) -> &mut Env {
+		self.envs.first_mut().expect("")
+	}
+}
 
 #[derive(Clone, Debug)]
 pub struct Env {
-	// parent will be idx of env in interpreter's env vector
-	// value of -1 signifies root
-	pub parent: i32,
-	pub idx: i32,
 	pub vars: HashMap<String, Option<Value>>,
+	pub types: HashMap<String, TypedItem>,
 	pub funcs: HashMap<String, Function>
 }
 
 impl Env {
-	pub fn new(parent: i32, idx: i32) -> Env {
+	pub fn new() -> Env {
 		Env {
-			parent: parent,
-			idx: idx,
 			vars: HashMap::new(),
+			types: HashMap::new(),
 			funcs: HashMap::new()
 		}
 	}
@@ -31,7 +56,8 @@ impl Env {
 	* 	argument. Functions should have their own isolated scope on each call.
 	*	That way, argument names do not interfere with global scope names.
 	*/
-	pub fn set(envs: &mut Vec<Env>, name: String, value: Value, passbyval: bool) {
+	pub fn set(envs: &mut ScopeList, name: String, value: Value, passbyval: bool) {
+		let envs = &mut envs.envs;
 		let mut idx = (envs.len()) as i32 - 1;
 		{
 			let env = &envs[idx as usize];
@@ -50,6 +76,26 @@ impl Env {
 		}
 	}
 
+	pub fn set_type(envs: &mut ScopeList, name: String, value: TypedItem, is_func: bool) {
+		let envs = &mut envs.envs;
+		let mut idx = (envs.len()) as i32 - 1;
+		{
+			let env = &envs[idx as usize];
+			if env.funcs.contains_key(&name) {
+				panic!("{} is already defined as a function", name);
+			}
+		}
+		let len = envs.len() as i32 - 1;
+		while let Some(e) = envs.get_mut(idx as usize) {
+			if e.types.contains_key(&name) || idx == len {
+				e.types.insert(name.clone(), value.clone());
+			}
+			// if function call, do not update any other scopes except the current
+			if is_func { break; }
+			idx -= 1;
+		}
+	}
+
 	pub fn get_func(&self, name: &str) -> Option<&Function> {
 		self.funcs.get(name)
 	}
@@ -57,10 +103,14 @@ impl Env {
 	pub fn get_var(&self, name: &str) -> Option<&Value> {
 		let var = self.vars.get(name);
 		if let Some(val) = var {
-			val.as_ref()	
+			val.as_ref()
 		} else {
 			None
 		}
+	}
+
+	pub fn get_mut(&mut self, name: &str) -> Option<&mut Option<Value>> {
+		self.vars.get_mut(name)
 	}
 
 	pub fn def_func(&mut self, name: String, func: Function) {
