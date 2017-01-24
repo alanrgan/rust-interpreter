@@ -3,7 +3,7 @@ use super::statement::Statement;
 
 #[derive(Debug, Clone)]
 pub struct Function {
-	// TODO:
+	// TODO: MAYBE, scopes are specific to the call
 	// pub env: Env,
 	pub params: Option<Vec<Parameter>>,
 	// Compound statement

@@ -6,9 +6,11 @@ pub use self::expression::*;
 pub use self::token::*;
 pub use self::func::*;
 pub use self::value::*;
+pub use self::env::*;
 
 pub mod list;
 pub mod ast;
+pub mod env;
 pub mod types;
 pub mod statement;
 pub mod expression;

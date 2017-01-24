@@ -2,7 +2,7 @@ use super::expression::*;
 use super::types::*;
 use super::value::Value;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct List {
 	pub values: Vec<ListElem>,
 	pub length: usize

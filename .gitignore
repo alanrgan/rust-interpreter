@@ -4,3 +4,4 @@ Cargo.lock
 doc
 src/tests
 src/Makefile
+src/*.sh

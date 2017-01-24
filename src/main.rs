@@ -19,12 +19,14 @@ use interpreter::Interpreter;
 use std::env;
 use std::fs::File;
 use std::io::Read;
+use ast::{Env, Value};
 
 fn usage() {
 	println!("usage: ./interpreter FILE");
 }
 
 fn main() {
+	
 	let args: Vec<String> = env::args().collect();
 
 	if args.len() != 2 {
@@ -49,4 +51,13 @@ fn main() {
 	if !cfg!(feature = "test") {
 		println!("{:?}", a);
 	}
+
+	/*let mut evecs: Vec<Env> = vec![];
+	let mut e = Env::new(0,0);
+	evecs.push(e);
+	Env::set(&mut evecs, "what".into(), Value::new("hi".into(), "".into(), None), true);
+	let sece = evecs.last_mut().unwrap().extend();
+	evecs.push(sece);
+	Env::set(&mut evecs, "what".into(), Value::new("who".into(), "str".into(), None), false);
+	println!("{:?}", evecs[0].vars);*/
 }

@@ -8,7 +8,9 @@ pub struct Interpreter<'a> {
 	// TODO: change to <String, Value>
 	pub vmap: HashMap<String, Option<Value>>, // map variable name to value
 	// This HashMap is used to check if requested type/class members are valid
-	pub types: HashMap<String, TypedItem>
+	pub types: HashMap<String, TypedItem>,
+	// scope stack, last elem is the top-most
+	pub envs: Vec<Env>
 }
 
 impl<'a> Interpreter<'a> {
@@ -18,7 +20,8 @@ impl<'a> Interpreter<'a> {
 		types.insert("str".to_string(), TypedItem::from(Primitive::Str("".to_string())));
 		types.insert("int".to_string(), TypedItem::from(Primitive::Integer(0)));
 		types.insert("list".to_string(), TypedItem::from(Primitive::Array(List::from(vec![0]))));
-		Interpreter { parser: parser, vmap: HashMap::new(), types: types }
+		let evec: Vec<Env> = vec![Env::new(-1, 0)];
+		Interpreter { parser: parser, vmap: HashMap::new(), types: types, envs: evec }
 	}
 
 	pub fn interpret(&mut self) -> TypedItem {
@@ -162,7 +165,7 @@ impl<'a> Interpreter<'a> {
 						return Ok((Primitive::LTerm(TermToken::Break)).into());
 					}
 					let result = self.visit(Box::new(child.clone()));
-					if let Err(_) = result { return result }
+					if result.is_err() { return result }
 					if let Ok(TypedItem::Primitive(Primitive::LTerm(TermToken::Break))) = result {
 						return result;
 					}
@@ -226,9 +229,6 @@ impl<'a> Interpreter<'a> {
 				}
 			},
 			Statement::Assign{ref var, ref value} => {
-				// TODO: Fix type checking.
-				// Right now, works for declare-then-initialize
-				// but not for declare-and-initialize
 				let val = self.visit_expr(value).unwrap();
 				match (var, value) {
 					(&Expression::Variable(ref vname), _) => {
@@ -244,7 +244,6 @@ impl<'a> Interpreter<'a> {
 						}
 					},
 					(&Expression::BrackOp(ref brack_expr), _) => {
-						// use List::get_mut_at for this 
 						let indices = brack_expr.indices.iter()
 						    .map(|ind| self.visit_expr(ind)
 								.and_then(|val| val.unpack::<i32>()
@@ -274,6 +273,10 @@ impl<'a> Interpreter<'a> {
 						None
 					}
 				};
+
+				Env::set(&mut self.envs, "test".into(), Value::new("".into(), "".into(), None), true);
+
+
 				if self.types.contains_key(&ty) {
 					let val = Value::new(lst.vname.clone(), ty.clone(), assigned_val.clone());
 					self.vmap.insert(lst.vname.clone(), val.into());
@@ -292,7 +295,7 @@ impl<'a> Interpreter<'a> {
 			Statement::Macro(ref mac) => {
 				if mac.name == "fail" {
 					let result = self.visit(mac.clone().arg);
-					if let Ok(_) = result {
+					if result.is_ok() {
 						return Err("fail error: statement did not panic".into())
 					}
 				}
