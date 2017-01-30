@@ -48,6 +48,7 @@ pub enum Token {
 	Else,
 	While,
 	For,
+	Fn,
 	In,
 	Continue,
 	Return,
@@ -135,7 +136,8 @@ impl KeywordBank {
 						"in" => Token::In,
 						"def" => Token::Def,
 						"class" => Token::Class,
-						"let" => Token::Let
+						"let" => Token::Let,
+						"fn" => Token::Fn
  					}
 		}
 	}

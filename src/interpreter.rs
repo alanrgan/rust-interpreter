@@ -220,7 +220,6 @@ impl<'a> Interpreter<'a> {
 						};
 						let val = Value::new(vname.clone(), prim.typename(), Some(prim));
 						Env::set(&mut self.envs, vname.clone(), val, false);
-						//self.vmap.insert(vname.clone(), Some(val));
 						match self.visit_statement(&fs.conseq) {
 							Ok(TypedItem::Primitive(Primitive::LTerm(TermToken::Break))) => break,
 							_ => {}
@@ -271,7 +270,6 @@ impl<'a> Interpreter<'a> {
 			Statement::Let(ref lst) => {
 				let ty = lst.ty.clone();
 				let val = Value::new(lst.vname.clone(), ty.clone(), Some(TypedItem::empty()));
-				//self.vmap.insert(lst.vname.clone(), val.into());
 				Env::set(&mut self.envs, lst.vname.clone(), val.into(), false);
 				let assigned_val = {
 					if let Some(ref statement) = lst.assign {
@@ -281,7 +279,7 @@ impl<'a> Interpreter<'a> {
 					}
 				};
 
-				if self.envs.current_scope().types.contains_key(&ty) {
+				if self.envs.current_scope().has_type(&ty) {
 					let val = Value::new(lst.vname.clone(), ty.clone(), assigned_val.clone());
 					Env::set(&mut self.envs, lst.vname.clone(), val.into(), false);
 					Ok(assigned_val.unwrap_or_else(TypedItem::empty))
@@ -290,7 +288,7 @@ impl<'a> Interpreter<'a> {
 				}
 			},
 			Statement::Define(ref obj) => {
-				if self.envs.current_scope().types.contains_key(&obj.name()) {
+				if self.envs.current_scope().has_type(&obj.name()) {
 					panic!("class '{}' is already defined", obj.name());
 				}
 				Env::set_type(&mut self.envs, obj.name(), TypedItem::Object(obj.clone()), false);
@@ -374,7 +372,7 @@ impl<'a> Interpreter<'a> {
 		// convert range into a vector of Primitives
 		range.enumerate()
 			 .filter(|i| i.0 % step == 0)
-			 .map(|tup| ListElem::Value(Expression::Value(Primitive::Integer(tup.1).into())))
+			 .map(|tup| Primitive::Integer(tup.1).into())
 			 .collect::<Vec<_>>()
 	}
 

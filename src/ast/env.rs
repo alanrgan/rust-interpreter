@@ -96,6 +96,10 @@ impl Env {
 		}
 	}
 
+	pub fn has_type(&self, name: &str) -> bool {
+		self.types.contains_key(name)
+	}
+
 	pub fn get_func(&self, name: &str) -> Option<&Function> {
 		self.funcs.get(name)
 	}

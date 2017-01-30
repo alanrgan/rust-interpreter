@@ -1,6 +1,7 @@
 use super::expression::*;
 use super::token::*;
 use super::types::*;
+use super::func::*;
 use super::ast::Visitable;
 
 #[derive(Debug, Clone)]
@@ -12,6 +13,7 @@ pub enum Statement {
 	If(Box<IfStatement>),
 	Print(Expression),
 	Define(Object),
+	FuncDef { name: String, func: Box<Function> },
 	Let(Box<LetStatement>),
 	Macro(Box<Macro>),
 	// temporary

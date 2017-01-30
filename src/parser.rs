@@ -82,6 +82,7 @@ impl<'a> Parser<'a> {
 				Statement::Macro(Box::new(Macro::new(macro_name, mstmt)))
 			},
 			Some(Token::Print) => self.print_statement(),
+			Some(Token::Fn) => self.func_def(),
 			Some(Token::Def) => self.define(),
 			Some(Token::Let) => self.parse_let(),
 			Some(Token::Comment) | Some(Token::BlockStart) | None => Statement::Empty,
@@ -123,9 +124,13 @@ impl<'a> Parser<'a> {
 		if let Some(ref tok) = self.current_token.clone() {
 			if Token::equals(tok, &Token::LCurl) {
 				self.eat(Token::LCurl);
-				let statement = self.statement_list();
+				if let Some(Token::RCurl) = self.current_token {}
+				else {
+					let statement = self.statement_list();
+					self.eat(Token::RCurl);
+					return statement;
+				}
 				self.eat(Token::RCurl);
-				return statement;
 			}
 		}
 		Statement::Empty
@@ -158,6 +163,50 @@ impl<'a> Parser<'a> {
 				break;
 			}
 		}
+	}
+
+	fn func_def(&mut self) -> Statement {
+		self.eat(Token::Fn);
+		let fname = self.ident().expect(&format!("Expected identifier, got {:?}", self.current_token));
+		self.eat(Token::LParen);
+		let params = self.param_list();
+		self.eat(Token::RParen);
+		
+		let mut rtype = None;
+		if let Some(Token::Colon) = self.current_token {
+			self.eat(Token::Colon);
+			rtype = self.ident();
+			if rtype.is_none() {
+				panic!("Expected return type in function declaration");
+			}
+		}
+
+		let conseq = self.compound_statement();
+
+		Statement::FuncDef{ name: fname, func: Box::new(Function::new(params, conseq, rtype)) }
+	}
+
+	fn param_list(&mut self) -> Option<Vec<Parameter>> {
+		if let Some(Token::RParen) = self.current_token { None }
+		else {
+			let mut params: Vec<Parameter> = vec![self.param()];
+			while let Some(Token::Comma) = self.current_token {
+				self.eat_current();
+				params.push(self.param());
+			}
+			Some(params)
+		}
+	}
+
+	fn param(&mut self) -> Parameter {
+		let id = self.ident().expect("expected identifier in parameter list");
+		self.eat(Token::Colon);
+		let ty = self.ident().expect("expected identifier in type specification");
+		Parameter::Full{ varname: id, typename: ty }
+	}
+
+	fn arglist(&mut self, is_def: bool) -> Option<ArgList> {
+		None
 	}
 
 	fn parse_let(&mut self) -> Statement {
@@ -380,6 +429,15 @@ impl<'a> Parser<'a> {
 		} else {
 			panic!("expected variable name, got {:?}", tok);
 		}
+	}
+
+	fn ident(&mut self) -> Option<String> {
+		let mut id = None;
+		if let Some(Token::Ident(ref ident)) = self.current_token {
+			id = Some(ident.clone());
+		}
+		if id.is_some() { self.eat_current(); }
+		id
 	}
 
 	fn expr(&mut self, precedence: u8) -> Expression 

@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 use super::token::*;
 use super::list::*;
+use super::closure::*;
 use super::func::Function;
 use super::value::Value;
 
@@ -54,6 +55,7 @@ pub enum Primitive {
 pub enum TypedItem {
 	Primitive(Primitive),
 	Object(Object),
+	Closure(Closure),
 	Value(Box<Value>) // essentially a named reference
 }
 
