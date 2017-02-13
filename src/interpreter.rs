@@ -4,8 +4,6 @@ use std::fmt::{Formatter, Debug, Error};
 
 pub struct Interpreter<'a> {
 	parser: Parser<'a>,
-	/*pub vmap: HashMap<String, Option<Value>>, // map variable name to value
-	pub types: HashMap<String, TypedItem>,*/
 	pub envs: ScopeList
 }
 
@@ -35,10 +33,15 @@ impl<'a> Interpreter<'a> {
 	fn visit_expr(&mut self, expr: &Expression) -> Result<TypedItem, String> {
 		match *expr {
 			Expression::BinOp(ref bexpr) => {
-				let left = self.visit_expr(&bexpr.left).unwrap();
-				let right = self.visit_expr(&bexpr.right).unwrap();
+				let left = self.visit_expr(&bexpr.left);
+				let right = self.visit_expr(&bexpr.right);
+				if left.is_err() { return left; }
+				if right.is_err() { return right; }
+				let left = left.unwrap();
+				let right = right.unwrap();
 				match bexpr.op {
 					// TODO: convert the following to macros if possible
+					// or 'lift' the operators by passing in closures
 					BinOp::Plus => {
 						match (left, right) {
 							(TypedItem::Primitive(l), TypedItem::Primitive(r)) => {
@@ -111,6 +114,23 @@ impl<'a> Interpreter<'a> {
 					_ => Err(String::from("invalid unary operation"))
 				}
 			},
+			Expression::Call{ref name, ref args} => {
+				let mut retval = Ok(TypedItem::empty());
+				self.envs.alias();
+				let env = self.envs.current_scope().clone();
+				if let Some(func) = env.get_func(name) {
+					let assigns = func.match_args(name.clone(), args).unwrap();
+					for stmt in assigns {
+						let res = self.visit_statement(&stmt);
+						if res.is_err() { return res; }
+					}
+					retval = self.visit_statement(&func.conseq);
+				} else {
+					retval = Err(format!("Function {} is not defined in this scope", name));
+				}
+				self.envs.pop();
+				retval
+			},
 			Expression::Variable(ref vname) => {
 				let res = self.envs.current_scope()
 						 .get_var(vname)
@@ -128,7 +148,7 @@ impl<'a> Interpreter<'a> {
 				let _ = prim.unpack_mut::<List>().map(|list| self.expand_list(list));
 				Ok(prim)
 			},
-			_ => Ok((Primitive::Empty).into())
+			_ => Ok(TypedItem::empty())
 		}
 	}
 
@@ -230,7 +250,7 @@ impl<'a> Interpreter<'a> {
 					Err("expected variable name in for loop".to_string())
 				}
 			},
-			Statement::Assign{ref var, ref value} => {
+			Statement::Assign{ref var, ref value, ref in_func} => {
 				let val = self.visit_expr(value).unwrap();
 				match (var, value) {
 					(&Expression::Variable(ref vname), _) => {
@@ -241,11 +261,11 @@ impl<'a> Interpreter<'a> {
 						
 						    let expected_type = elem.clone().unwrap().ty_name;
 						    if expected_type != val.typename() {
-						    	return Err(format!("mismatched types: expected {}, found {}, {:?}",
-						    			expected_type, val.typename(), val));
+						    	return Err(format!("mismatched types: expected {}, found {}",
+						    			expected_type, val.typename()));
 						    }
 						}
-					    Env::set(&mut self.envs, vname.clone(), value, false);
+					    Env::set(&mut self.envs, vname.clone(), value, *in_func);
 						Ok(val)
 					},
 					(&Expression::BrackOp(ref brack_expr), _) => {
@@ -270,7 +290,7 @@ impl<'a> Interpreter<'a> {
 			Statement::Let(ref lst) => {
 				let ty = lst.ty.clone();
 				let val = Value::new(lst.vname.clone(), ty.clone(), Some(TypedItem::empty()));
-				Env::set(&mut self.envs, lst.vname.clone(), val.into(), false);
+				Env::set(&mut self.envs, lst.vname.clone(), val.into(), lst.in_func);
 				let assigned_val = {
 					if let Some(ref statement) = lst.assign {
 						Some(try!(self.visit_statement(statement)))
@@ -281,7 +301,7 @@ impl<'a> Interpreter<'a> {
 
 				if self.envs.current_scope().has_type(&ty) {
 					let val = Value::new(lst.vname.clone(), ty.clone(), assigned_val.clone());
-					Env::set(&mut self.envs, lst.vname.clone(), val.into(), false);
+					Env::set(&mut self.envs, lst.vname.clone(), val.into(), lst.in_func);
 					Ok(assigned_val.unwrap_or_else(TypedItem::empty))
 				} else {
 					Err(format!("Type {} is not defined", ty))
@@ -293,6 +313,14 @@ impl<'a> Interpreter<'a> {
 				}
 				Env::set_type(&mut self.envs, obj.name(), TypedItem::Object(obj.clone()), false);
 				Ok(TypedItem::empty())
+			},
+			Statement::FuncDef{ref name, ref func} => {
+				self.envs.current_scope()
+						 .def_func(name.clone(), *func.clone());
+				Ok(TypedItem::empty())
+			},
+			Statement::FuncCall(ref call) => {
+				self.visit_expr(call)
 			},
 			Statement::Macro(ref mac) => {
 				if mac.name == "fail" {

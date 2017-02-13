@@ -2,11 +2,13 @@ use super::ast::*;
 use super::token::*;
 use super::types::*;
 use super::list::*;
+use super::func::ArgList;
 
 #[derive(Debug, Clone)]
 pub enum Expression {
 	BinOp(Box<BinOpExpression>),
 	BrackOp(Box<BrackOpExpression>),
+	Call { name: String, args: Option<ArgList> },
 	Value(TypedItem),
 	Variable(String),
 	Empty,

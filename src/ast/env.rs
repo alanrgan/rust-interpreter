@@ -3,14 +3,17 @@ use super::value::*;
 use super::func::*;
 use super::types::TypedItem;
 
+type VarMap = HashMap<String, Option<Value>>;
+
 #[derive(Clone, Debug)]
 pub struct ScopeList {
-	pub envs: Vec<Env>
+	pub envs: Vec<Env>,
+	aliases: Vec<VarMap>
 }
 
 impl ScopeList {
 	pub fn new() -> ScopeList {
-		ScopeList { envs: vec![ Env::new() ] }
+		ScopeList { envs: vec![ Env::new() ], aliases: vec![] }
 	}
 
 	pub fn current_scope(&mut self) -> &mut Env {
@@ -26,6 +29,11 @@ impl ScopeList {
 		self.envs.pop();
 	}
 
+	pub fn alias(&mut self) {
+		let scope = self.current_scope().alias();
+		self.envs.push(scope);
+	}
+
 	pub fn global_scope(&mut self) -> &mut Env {
 		self.envs.first_mut().expect("")
 	}
@@ -33,7 +41,7 @@ impl ScopeList {
 
 #[derive(Clone, Debug)]
 pub struct Env {
-	pub vars: HashMap<String, Option<Value>>,
+	pub vars: VarMap,
 	pub types: HashMap<String, TypedItem>,
 	pub funcs: HashMap<String, Function>
 }
@@ -49,6 +57,12 @@ impl Env {
 
 	pub fn extend(&mut self) -> Env {
 		self.clone()
+	}
+
+	pub fn alias(&mut self) -> Env {
+		let mut e = self.clone();
+		e.vars = HashMap::new();
+		e
 	}
 
 	/*

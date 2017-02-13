@@ -56,10 +56,18 @@ impl<'a> Parser<'a> {
 			Some(Token::For) => self.for_loop(),
 			Some(Token::While) => self.while_loop(),
 			Some(Token::Ident(vname)) => {
-				let mut var = self.variable();
+				let mut var = {
+					let v = self.variable();
+					if let Some(Token::LParen) = self.current_token {
+						self.parse_call(vname.clone())
+					} else { v }
+				};
 				//println!("var {:?}", var);
 				//println!("curtok: {:?}", self.current_token);
 				var = self.parse_brackets(vname).unwrap_or(var);
+				if let Expression::Call{..} = var {
+					return Statement::FuncCall(var);
+				}
 
 				match self.current_token {
 					Some(Token::Equals) => self.assignment(var),
@@ -92,30 +100,34 @@ impl<'a> Parser<'a> {
 
 	fn statement_list(&mut self) -> Statement {
 		let mut nodes: Vec<Statement> = vec![self.statement()];
+		let mut require_semi = true;
 		while let Some(ref tok) = self.current_token.clone() {
 			match *tok {
 				Token::Semi => self.eat(Token::Semi),
-				Token::Comment => {
-					self.comment();
-				},
-				Token::BlockStart => {
-					self.block_comment();
-					//continue;
-				},
+				Token::Comment => self.comment(),
+				Token::BlockStart => self.block_comment(),
 				Token::RCurl => break,
-				_ => {
-					match *nodes.last().unwrap() {
-						Statement::If(_) | Statement::For(_) |
-						Statement::While{..} => {},
-						_ => panic!("expected semicolon, got {:?}", tok)
-					}
-				}
+				_ if require_semi => panic!("expected semicolon, got {:?}", tok),
+				_ => {}
 			}
 			match self.current_token {
 				Some(Token::RCurl) | None => break,
 				_ => {}
 			};
-			nodes.push(self.statement());
+			// push left if statement is a function definition
+			let stmt = self.statement();
+			match stmt {
+				Statement::FuncDef{..} => {
+					require_semi = false;
+					nodes.insert(0, stmt);
+				},
+				Statement::Compound{..} |
+				Statement::If(_) | Statement::For(_) | Statement::While{..} => {
+					require_semi = false;
+					nodes.push(stmt);
+				}
+				_ => { nodes.push(stmt); }
+			}
 		}
 		Statement::Compound{children: nodes}
 	}
@@ -171,7 +183,7 @@ impl<'a> Parser<'a> {
 		self.eat(Token::LParen);
 		let params = self.param_list();
 		self.eat(Token::RParen);
-		
+
 		let mut rtype = None;
 		if let Some(Token::Colon) = self.current_token {
 			self.eat(Token::Colon);
@@ -205,8 +217,16 @@ impl<'a> Parser<'a> {
 		Parameter::Full{ varname: id, typename: ty }
 	}
 
-	fn arglist(&mut self, is_def: bool) -> Option<ArgList> {
-		None
+	fn arglist(&mut self) -> Option<ArgList> {
+		if let Some(Token::RParen) = self.current_token { None }
+		else {
+			let mut args = ArgList(vec![self.expr(0)]);
+			while let Some(Token::Comma) = self.current_token {
+				self.eat_current();
+				args.0.push(self.expr(0))
+			}
+			Some(args)
+		}
 	}
 
 	fn parse_let(&mut self) -> Statement {
@@ -226,7 +246,8 @@ impl<'a> Parser<'a> {
 		Statement::Let(Box::new(
 			LetStatement { vname: var.as_variable().unwrap(),
 		 				   ty: tyname,
-		 				   assign: assign
+		 				   assign: assign,
+		 				   in_func: false
 		 				 }))
 	}
 
@@ -236,7 +257,8 @@ impl<'a> Parser<'a> {
 			Expression::Variable(_) | Expression::BrackOp(_) => {
 				Statement::Assign {
 					var: var.clone(),
-					value: self.expr(0)
+					value: self.expr(0),
+					in_func: false
 				}
 			},
 			_ => panic!("Expected a variable on assignment")
@@ -265,7 +287,8 @@ impl<'a> Parser<'a> {
 			Expression::Variable(_) => {
 				Statement::Assign {
 					var: var.clone(),
-					value: Expression::new_binop(op, var, self.expr(0))
+					value: Expression::new_binop(op, var, self.expr(0)),
+					in_func: false
 				}
 			},
 			_ => panic!("Expected a variable on assignment")
@@ -278,6 +301,13 @@ impl<'a> Parser<'a> {
 		let node = Statement::Print(self.expr(0));
 		self.eat(Token::RParen);
 		node
+	}
+
+	fn parse_call(&mut self, fname: String) -> Expression {
+		self.eat(Token::LParen);
+		let arglist = self.arglist();
+		self.eat(Token::RParen);
+		Expression::Call{name: fname, args: arglist}
 	}
 
 	fn define(&mut self) -> Statement {
@@ -319,8 +349,13 @@ impl<'a> Parser<'a> {
 				self.eat(Token::RParen);
 				expr
 			},
-			Token::Ident(vname) => { 
-				let var = self.variable();
+			Token::Ident(vname) => {
+				let var = {
+					let v = self.variable();
+					if let Some(Token::LParen) = self.current_token {
+						self.parse_call(vname.clone())
+					} else { v }
+				};
 				self.parse_brackets(vname).unwrap_or(var)
 			},
 			_ => { panic!("found unexpected token {:?}", token) }

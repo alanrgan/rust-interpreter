@@ -9,11 +9,12 @@ pub enum Statement {
 	For(Box<ForStatement>),
 	While { pred: Expression, conseq: Box<Statement> },
 	Compound { children: Vec<Statement> },
-	Assign { var: Expression, value: Expression },
+	Assign { var: Expression, value: Expression, in_func: bool },
 	If(Box<IfStatement>),
 	Print(Expression),
 	Define(Object),
 	FuncDef { name: String, func: Box<Function> },
+	FuncCall(Expression),
 	Let(Box<LetStatement>),
 	Macro(Box<Macro>),
 	// temporary
@@ -32,7 +33,22 @@ pub struct Macro {
 pub struct LetStatement {
 	pub vname: String,
 	pub ty: String,
-	pub assign: Option<Statement>
+	pub assign: Option<Statement>,
+	// used to distinguish assigning variables within function params vs
+	// regular
+	pub in_func: bool
+}
+
+impl Statement {
+	pub fn new_let(vname: String, ty: String, assign: Option<Statement>, in_func: bool) -> Statement {
+		let s = LetStatement {
+			vname: vname,
+			ty: ty,
+			assign: assign,
+			in_func: in_func
+		};
+		Statement::Let(Box::new(s))
+	}
 }
 
 #[derive(Debug, Clone)]
