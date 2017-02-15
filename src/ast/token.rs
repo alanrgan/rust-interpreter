@@ -27,6 +27,7 @@ pub enum Token {
 	RParen,
 	Semi,
 	Comma,
+	Backslash,
 	Dot,
 	DotRange,
 	RCurl, // }
@@ -53,7 +54,8 @@ pub enum Token {
 	Continue,
 	Return,
 	Break,
-	Print
+	Print,
+	Undefined(char)
 }
 
 impl Token {

@@ -150,7 +150,11 @@ impl<'a> Lexer<'a> {
 						self.iter.next();
 						return Some(Token::Quot);
 					},
-					_ => return None
+					'\\' => {
+						self.iter.next();
+						return Some(Token::Backslash);
+					},
+					_ => return Some(Token::Undefined(ch))
 				}
 			}
 		}

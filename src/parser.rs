@@ -78,6 +78,12 @@ impl<'a> Parser<'a> {
 					_ => Statement::Empty
 				}
 			},
+			Some(Token::Return) => {
+				self.eat(Token::Return);
+				let expr = if let Some(Token::Semi) = self.current_token { None }
+						   else { Some(self.expr(0)) };
+				Statement::Return{ rval: expr }
+			},
 			Some(Token::Break) => {
 				self.eat(Token::Break);
 				Statement::Term(TermToken::Break) 
@@ -99,8 +105,9 @@ impl<'a> Parser<'a> {
 	}
 
 	fn statement_list(&mut self) -> Statement {
-		let mut nodes: Vec<Statement> = vec![self.statement()];
-		let mut require_semi = true;
+		let stmt = self.statement();
+		let mut require_semi = stmt.requires_semi();
+		let mut nodes: Vec<Statement> = vec![stmt];
 		while let Some(ref tok) = self.current_token.clone() {
 			match *tok {
 				Token::Semi => self.eat(Token::Semi),
@@ -116,18 +123,9 @@ impl<'a> Parser<'a> {
 			};
 			// push left if statement is a function definition
 			let stmt = self.statement();
-			match stmt {
-				Statement::FuncDef{..} => {
-					require_semi = false;
-					nodes.insert(0, stmt);
-				},
-				Statement::Compound{..} |
-				Statement::If(_) | Statement::For(_) | Statement::While{..} => {
-					require_semi = false;
-					nodes.push(stmt);
-				}
-				_ => { nodes.push(stmt); }
-			}
+			require_semi = stmt.requires_semi();
+			if let Statement::FuncDef{..} = stmt { nodes.insert(0, stmt); }
+			else { nodes.push(stmt) }
 		}
 		Statement::Compound{children: nodes}
 	}

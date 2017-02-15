@@ -16,6 +16,7 @@ pub enum Statement {
 	FuncDef { name: String, func: Box<Function> },
 	FuncCall(Expression),
 	Let(Box<LetStatement>),
+	Return { rval: Option<Expression> },
 	Macro(Box<Macro>),
 	// temporary
 	Expr(Expression),
@@ -48,6 +49,16 @@ impl Statement {
 			in_func: in_func
 		};
 		Statement::Let(Box::new(s))
+	}
+
+	pub fn requires_semi(&self) -> bool {
+		match *self {
+			Statement::FuncDef{..} | Statement::Compound{..} |
+			Statement::If(_) | Statement::For(_) | Statement::While{..} => {
+				false
+			}
+			_ => { true }
+		}
 	}
 }
 

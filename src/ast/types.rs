@@ -9,6 +9,8 @@ use super::closure::*;
 use super::func::Function;
 use super::value::Value;
 
+pub type VisitResult = Result<TypedItem, String>;
+
 pub trait Unpacker<T> {
 	fn unpack(&T) -> Result<Self, ()> where Self: Sized;
 	fn unpack_mut(&mut T) -> Result<&mut Self, ()> where Self: Sized;
@@ -56,7 +58,8 @@ pub enum TypedItem {
 	Primitive(Primitive),
 	Object(Object),
 	Closure(Closure),
-	Value(Box<Value>) // essentially a named reference
+	Value(Box<Value>), // essentially a named reference
+	RetVal(Box<VisitResult>)
 }
 
 impl TypedItem {
@@ -95,6 +98,12 @@ impl TypedItem {
 	pub fn empty() -> TypedItem {
 		TypedItem::from(Primitive::Empty)
 	}
+
+	pub fn unwrap_ret(self) -> VisitResult {
+		if let TypedItem::RetVal(ref rval) = self {
+			*rval.clone()
+		} else { Ok(self) }
+	}
 }
 
 impl fmt::Display for TypedItem {
@@ -116,6 +125,12 @@ impl fmt::Display for TypedItem {
 impl From<Primitive> for TypedItem {
 	fn from(some: Primitive) -> TypedItem {
 		TypedItem::Primitive(some)
+	}
+}
+
+impl From<VisitResult> for TypedItem {
+	fn from(some: VisitResult) -> TypedItem {
+		TypedItem::RetVal(Box::new(some))
 	}
 }
 
@@ -201,11 +216,11 @@ impl Add for Primitive {
 impl Sub for Primitive {
 	type Output = Primitive;
 	fn sub(self, other: Primitive) -> Primitive {
-		match (self, other) {
+		match (self.clone(), other.clone()) {
 			(Primitive::Integer(first), Primitive::Integer(second)) => {
 				Primitive::Integer(first - second)
 			},
-			_ => panic!("Use of undefined sub operation")
+			_ => panic!("Use of undefined sub operation for {:?} and {:?}", self, other)
 		}
 	}
 }

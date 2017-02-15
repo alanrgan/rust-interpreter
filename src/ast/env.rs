@@ -29,8 +29,9 @@ impl ScopeList {
 		self.envs.pop();
 	}
 
-	pub fn alias(&mut self) {
-		let scope = self.current_scope().alias();
+	// vnames is a vector of names to import from the previous scope (i.e. the argnames)
+	pub fn alias(&mut self, vnames: Vec<String>) {
+		let scope = self.current_scope().alias(vnames);
 		self.envs.push(scope);
 	}
 
@@ -59,9 +60,15 @@ impl Env {
 		self.clone()
 	}
 
-	pub fn alias(&mut self) -> Env {
+	pub fn alias(&mut self, vnames: Vec<String>) -> Env {
 		let mut e = self.clone();
 		e.vars = HashMap::new();
+		for name in vnames {
+			let value = self.vars.get(&name);
+			if value.is_some() {
+				e.vars.insert(name, value.unwrap().clone());
+			}
+		}
 		e
 	}
 

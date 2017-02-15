@@ -116,20 +116,30 @@ impl<'a> Interpreter<'a> {
 			},
 			Expression::Call{ref name, ref args} => {
 				let mut retval = Ok(TypedItem::empty());
-				self.envs.alias();
 				let env = self.envs.current_scope().clone();
 				if let Some(func) = env.get_func(name) {
-					let assigns = func.match_args(name.clone(), args).unwrap();
+					let (assigns, vnames) = func.match_args(name.clone(), args).unwrap();
 					for stmt in assigns {
 						let res = self.visit_statement(&stmt);
 						if res.is_err() { return res; }
 					}
+					self.envs.alias(vnames);
 					retval = self.visit_statement(&func.conseq);
+					self.envs.pop();
+					if retval.is_ok() {
+						let rtype = retval.clone().unwrap().unwrap_ret().unwrap().typename();
+						let func_rtype = func.rtype();
+						if rtype != func.rtype() {
+							retval = Err(format!("{}: Expected return type {}, got {}",
+												 name, func_rtype, rtype));
+						}
+					}
 				} else {
 					retval = Err(format!("Function {} is not defined in this scope", name));
 				}
-				self.envs.pop();
-				retval
+				if retval.is_ok() {
+					retval.unwrap().unwrap_ret()
+				} else { retval }
 			},
 			Expression::Variable(ref vname) => {
 				let res = self.envs.current_scope()
@@ -182,13 +192,34 @@ impl<'a> Interpreter<'a> {
 				self.envs.extend();
 				for child in children {
 					//println!("{:?}\n", child);
-					if let Statement::Term(TermToken::Break) = *child {
-						return Ok((Primitive::LTerm(TermToken::Break)).into());
+					match *child {
+						Statement::Term(TermToken::Break) => {
+							self.envs.pop();
+							return Ok((Primitive::LTerm(TermToken::Break)).into());
+						},
+						Statement::Return{ ref rval } => {
+							let expr = if rval.is_some() {
+								Ok(TypedItem::from(self.visit_expr(rval.as_ref().unwrap())))
+							} else {
+								Ok(TypedItem::empty())
+							};
+							self.envs.pop();
+							return expr;
+						},
+						_ => {}
 					}
+
 					let result = self.visit(Box::new(child.clone()));
 					if result.is_err() { return result }
-					if let Ok(TypedItem::Primitive(Primitive::LTerm(TermToken::Break))) = result {
-						return result;
+
+					// propagate any returns or breaks upward
+					match result {
+						Ok(TypedItem::Primitive(Primitive::LTerm(TermToken::Break))) 
+						| Ok(TypedItem::RetVal(_)) => {
+							self.envs.pop();
+							return result
+						},
+						_ => {}
 					}
 				}
 				self.envs.pop();
@@ -251,7 +282,10 @@ impl<'a> Interpreter<'a> {
 				}
 			},
 			Statement::Assign{ref var, ref value, ref in_func} => {
-				let val = self.visit_expr(value).unwrap();
+				//println!("i am in assign and scope vars is {:?}", self.envs.current_scope().vars);
+				let val = self.visit_expr(value);
+				if let Err(_) = val { return val; }
+				let val = val.unwrap();
 				match (var, value) {
 					(&Expression::Variable(ref vname), _) => {
 						let value = Value::new(vname.clone(), val.typename(), Some(val.clone()));
@@ -289,7 +323,10 @@ impl<'a> Interpreter<'a> {
 			},
 			Statement::Let(ref lst) => {
 				let ty = lst.ty.clone();
-				let val = Value::new(lst.vname.clone(), ty.clone(), Some(TypedItem::empty()));
+				let prevval = if let Some(val) = self.envs.current_scope().vars.get(&lst.vname) {
+					val.clone().map(|x| x.value.unwrap())
+				} else { Some(TypedItem::empty())};
+				let val = Value::new(lst.vname.clone(), ty.clone(), prevval);
 				Env::set(&mut self.envs, lst.vname.clone(), val.into(), lst.in_func);
 				let assigned_val = {
 					if let Some(ref statement) = lst.assign {
@@ -321,6 +358,10 @@ impl<'a> Interpreter<'a> {
 			},
 			Statement::FuncCall(ref call) => {
 				self.visit_expr(call)
+			},
+			Statement::Return{ref rval} => {
+				println!("Visiting return... {:?}\n", self.envs.current_scope().vars);
+				rval.as_ref().map_or(Ok(TypedItem::empty()), |expr| self.visit_expr(expr))
 			},
 			Statement::Macro(ref mac) => {
 				if mac.name == "fail" {
