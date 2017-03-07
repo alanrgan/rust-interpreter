@@ -14,7 +14,7 @@ pub struct Function {
 	pub retval: Option<String>
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub enum Parameter {
 	Full { varname: String, typename: String },
 	Partial

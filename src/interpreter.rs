@@ -352,8 +352,27 @@ impl<'a> Interpreter<'a> {
 				Ok(TypedItem::empty())
 			},
 			Statement::FuncDef{ref name, ref func} => {
+				use std::collections::HashSet;
+
+				let fun = *func.clone();
+				if let Some(ref param_list) = fun.params {
+					let has_dup_param = {
+						param_list.iter().fold((false, HashSet::new()), |acc, x| {
+							let mut hset = acc.1.clone();
+							let mut res = acc.0;
+							if let Parameter::Full{ ref varname, ..} = *x {
+								res = res || acc.1.contains(varname);
+								hset.insert(varname);
+							}
+							(res, hset)
+						}).0
+					};
+					if has_dup_param {
+						return Err(format!("function definition for {} has duplicate parameter names", name));
+					}
+				}
 				self.envs.current_scope()
-						 .def_func(name.clone(), *func.clone());
+						 .def_func(name.clone(), fun);
 				Ok(TypedItem::empty())
 			},
 			Statement::FuncCall(ref call) => {

@@ -7,21 +7,23 @@ use ast::{Token, KeywordBank};
 
 pub struct Lexer<'a> {
 	pub iter: Peekable<Chars<'a>>,
-	keywords: KeywordBank
+	keywords: KeywordBank,
+	pub line: i32
 }
 
 impl<'a> Lexer<'a> {
 	pub fn new(text: &str) -> Lexer {
 		Lexer {
 			iter: text.chars().peekable(),
-			keywords: KeywordBank::new()
+			keywords: KeywordBank::new(),
+			line: 1
 		}
 	}
 
 	pub fn next_token(&mut self) -> Option<Token> {
 		while let Some(&ch) = self.iter.peek() {
 			if ch.is_whitespace() {
-				self.pass_while(|c| c.is_whitespace());
+				self.pass_while(|c|	c.is_whitespace());
 				continue;
 			} else {
 				match ch {
@@ -165,6 +167,7 @@ impl<'a> Lexer<'a> {
 		where F: Fn(char) -> bool {
 		while let Some(&ch) = self.iter.peek() {
 			if f(ch) {
+				if ch == '\n' { self.line += 1; }
 				self.iter.next();
 			} else {
 				break;
@@ -179,6 +182,7 @@ impl<'a> Lexer<'a> {
 
 		while let Some(&ch) = self.iter.peek() {
 			if f(ch) {
+				if ch == '\n' { self.line += 1; }
 				self.iter.next();
 				v.push(ch);
 			} else {
@@ -195,6 +199,7 @@ impl<'a> Lexer<'a> {
 
 		while let Some(&ch) = self.iter.peek() {
 			if !f(ch) {
+				if ch == '\n' { self.line += 1; }
 				self.iter.next();
 				if let Some(esc_char) = self.peek_escape_char(ch) {
 					v.push(esc_char);

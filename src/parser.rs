@@ -20,7 +20,8 @@ impl<'a> Parser<'a> {
 	}
 
 	fn error(&self, expect: Token) {
-		panic!("Invalid syntax: expected {:?}, got {:?}", expect, self.current_token);
+		panic!("Invalid syntax on line {}: expected {:?}, got {:?}",
+				self.lexer.line, expect, self.current_token);
 	}
 
 	fn eat(&mut self, tok: Token) {
@@ -347,6 +348,7 @@ impl<'a> Parser<'a> {
 				self.eat(Token::RParen);
 				expr
 			},
+			Token::Backslash => self.closure(),
 			Token::Ident(vname) => {
 				let var = {
 					let v = self.variable();
@@ -384,7 +386,6 @@ impl<'a> Parser<'a> {
 				Some(Token::RBrace) => {
 					self.eat(Token::RBrace);
 					if let Some(list) = list_stack.pop() {
-						//println!("list stack: {:?}, list: {:?}", list_stack, list);
 						if let Some(mut lower_list) = list_stack.last_mut() {
 							lower_list.push(ListElem::SubList(list));
 						} else {
@@ -443,6 +444,10 @@ impl<'a> Parser<'a> {
 			// otherwise do nothing and continue
 			_ => ListElem::Value(factor)
 		}
+	}
+
+	fn closure(&mut self) -> Expression {
+		Expression::Empty
 	}
 
 	fn string(&mut self) -> String {
