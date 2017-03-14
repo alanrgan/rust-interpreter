@@ -57,7 +57,7 @@ pub enum TypedItem {
 	Primitive(Primitive),
 	Object(Object),
 	Closure(Box<Function>),
-	FnPtr(String),
+	FnPtr{fname: String, is_def: bool},
 	Value(Box<Value>), // essentially a named reference
 	RetVal(Box<VisitResult>)
 }

@@ -338,7 +338,7 @@ impl<'a> Parser<'a> {
 		self.eat(Token::LParen);
 		let arglist = self.arglist();
 		self.eat(Token::RParen);
-		Expression::Call{name: fname, args: arglist}
+		Expression::Call{name: fname.clone(), alias: fname, args: arglist}
 	}
 
 	fn define(&mut self) -> Statement {

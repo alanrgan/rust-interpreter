@@ -115,11 +115,11 @@ impl<'a> Interpreter<'a> {
 					_ => Err(String::from("invalid unary operation"))
 				}
 			},
-			Expression::Call{ref name, ref args} => {
+			Expression::Call{ref name, ref alias, ref args} => {
 				let mut retval = Ok(TypedItem::empty());
 				let env = self.envs.current_scope().clone();
 				if let Some(func) = env.get_func(name) {
-					let (assigns, vnames) = func.match_args(name.clone(), args).unwrap();
+					let (assigns, vnames) = func.match_args(alias.clone(), args).unwrap();
 					for stmt in assigns {
 						let res = self.visit_statement(&stmt);
 						if res.is_err() { return res; }
@@ -136,8 +136,8 @@ impl<'a> Interpreter<'a> {
 						}
 					}
 				} else if let Some(val) = env.get_var(name) {
-					if let Some(TypedItem::FnPtr(ref id)) = val.value {
-						let expr = Expression::Call{name: id.clone(), args: args.clone()};
+					if let Some(TypedItem::FnPtr{ref fname, ..}) = val.value {
+						let expr = Expression::Call{name: fname.clone(), alias: name.clone(), args: args.clone()};
 						return self.visit_expr(&expr);
 					} else {
 						retval = Err(format!("Function {} is not defined in this scope", name));
@@ -296,10 +296,11 @@ impl<'a> Interpreter<'a> {
 				let val = val.unwrap();
 				match (var, value) {
 					(&Expression::Variable(ref vname), _) => {
-						let value = Value::new(vname.clone(), val.typename(), Some(val.clone()));
+						let mut vitem = val.clone();
 						{
-							let tname = if let TypedItem::FnPtr(ref id) = val {
-						    	self.envs.current_scope().get_func(id).unwrap().clone().ty
+							let tname = if let TypedItem::FnPtr{ref fname, ..} = val {
+								vitem = TypedItem::FnPtr{fname: fname.clone(), is_def: false};
+						    	self.envs.current_scope().get_func(fname).unwrap().clone().ty
 						    } else {
 						    	val.typename()
 						    };
@@ -314,19 +315,13 @@ impl<'a> Interpreter<'a> {
 						    }
 						}
 
+						let value = Value::new(vname.clone(), val.typename(), Some(vitem.clone()));
+
 						if let TypedItem::Closure(ref b) = val {
-							let mut id = Uuid::new_v4().simple().to_string();
-							id = format!("{}{}","@",id);
-							self.envs.current_scope().def_func(id.clone(), *b.clone());
-							let ptr = TypedItem::FnPtr(id.clone());
-							let v = Value::new(vname.clone(), val.typename(), Some(ptr.clone()));
-					    	Env::set(&mut self.envs, vname.clone(), v, *in_func);
-					    	Ok(ptr)
-					    } /*else if let TypedItem::FnPtr(ref id) = val {
-					    	let func = 
-					    }*/ else {
+					    	Ok(self.def_func_ptr(vname.clone(), &val, b, *in_func, false))
+					    } else {
 					    	Env::set(&mut self.envs, vname.clone(), value, *in_func);
-							Ok(val)
+							Ok(vitem)
 						}
 					},
 					(&Expression::BrackOp(ref brack_expr), _) => {
@@ -400,8 +395,10 @@ impl<'a> Interpreter<'a> {
 						return Err(format!("function definition for {} has duplicate parameter names", name));
 					}
 				}
-				self.envs.current_scope()
-						 .def_func(name.clone(), fun);
+				let val = TypedItem::Closure(func.clone());
+				self.def_func_ptr(name.clone(), &val, func, false, true);
+				/*self.envs.current_scope()
+						 .def_func(name.clone(), fun);*/
 				Ok(TypedItem::empty())
 			},
 			Statement::FuncCall(ref call) => {
@@ -428,6 +425,16 @@ impl<'a> Interpreter<'a> {
 			Statement::Expr(ref expr) => self.visit_expr(expr),
 			_ => Ok(TypedItem::empty())
 		}
+	}
+
+	fn def_func_ptr(&mut self, vname: String, val: &TypedItem, b: &Box<Function>, in_func: bool, is_def: bool) -> TypedItem {
+		let mut id = Uuid::new_v4().simple().to_string();
+		id = format!("{}{}","@",id);
+		self.envs.current_scope().def_func(id.clone(), *b.clone());
+		let ptr = TypedItem::FnPtr{fname: id, is_def: is_def};
+		let v = Value::new(vname.clone(), val.typename(), Some(ptr.clone()));
+    	Env::set(&mut self.envs, vname.clone(), v, in_func);
+    	ptr
 	}
 
 	fn print_item(&self, t: TypedItem) {

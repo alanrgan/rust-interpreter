@@ -63,6 +63,16 @@ impl Env {
 	pub fn alias(&mut self, vnames: Vec<String>) -> Env {
 		let mut e = self.clone();
 		e.vars = HashMap::new();
+
+		// copy all function pointers over
+		for (key, val) in &self.vars{
+			if let Some(TypedItem::FnPtr{ref fname, is_def}) = val.as_ref().unwrap().value {
+				if is_def {
+					e.vars.insert(key.clone(), val.clone());
+				}
+			}
+		}
+
 		for name in vnames {
 			let value = self.vars.get(&name);
 			if value.is_some() {
