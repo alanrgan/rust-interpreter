@@ -5,7 +5,6 @@ use std::collections::HashMap;
 
 use super::token::*;
 use super::list::*;
-use super::closure::*;
 use super::func::Function;
 use super::value::Value;
 
@@ -57,7 +56,8 @@ pub enum Primitive {
 pub enum TypedItem {
 	Primitive(Primitive),
 	Object(Object),
-	Closure(Closure),
+	Closure(Box<Function>),
+	FnPtr(String),
 	Value(Box<Value>), // essentially a named reference
 	RetVal(Box<VisitResult>)
 }
@@ -66,6 +66,7 @@ impl TypedItem {
 	pub fn typename(&self) -> String {
 		match *self {
 			TypedItem::Object(ref obj) => obj.name(),
+			TypedItem::Closure(ref b) => b.clone().ty,
 			TypedItem::Primitive(Primitive::Bool(_)) => "bool".to_string(),
 			TypedItem::Primitive(Primitive::Integer(_)) => "int".to_string(),
 			TypedItem::Primitive(Primitive::Str(_)) => "str".to_string(),
@@ -131,6 +132,12 @@ impl From<Primitive> for TypedItem {
 impl From<VisitResult> for TypedItem {
 	fn from(some: VisitResult) -> TypedItem {
 		TypedItem::RetVal(Box::new(some))
+	}
+}
+
+impl From<Function> for TypedItem {
+	fn from(some: Function) -> TypedItem {
+		TypedItem::Closure(Box::new(some))
 	}
 }
 

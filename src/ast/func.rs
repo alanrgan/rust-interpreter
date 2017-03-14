@@ -1,5 +1,6 @@
 use super::statement::Statement;
 use super::expression::Expression;
+use regex::Regex;
 
 type NameArgPair = (Vec<Statement>, Vec<String>);
 
@@ -11,7 +12,8 @@ pub struct Function {
 	// Compound statement
 	pub conseq: Statement,
 	// string representation of return value type
-	pub retval: Option<String>
+	pub retval: Option<String>,
+	pub ty: String,
 }
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -20,12 +22,23 @@ pub enum Parameter {
 	Partial
 }
 
+impl Parameter {
+	pub fn typename(&self) -> &str {
+		if let Parameter::Full{ ref varname, ref typename } = *self {
+			typename
+		} else {
+			"?"
+		}
+	}
+}
+
 #[derive(Debug, Clone)]
 pub struct ArgList(pub Vec<Expression>);
 
 impl Function {
 	pub fn new(params: Option<Vec<Parameter>>, conseq: Statement, rtype: Option<String>) -> Function {
-		Function { params: params, conseq: conseq, retval: rtype }
+		let ftype = Function::construct_type(&params, &rtype);
+		Function { params: params, conseq: conseq, retval: rtype, ty: ftype }
 	}
 
 	pub fn rtype(&self) -> String {
@@ -59,5 +72,40 @@ impl Function {
 		} else {
 			Err(format!("Expected {} arguments to {}, got {}", nparams, fname, args.len()))
 		}
+	}
+
+	fn construct_type(params: &Option<Vec<Parameter>>, retval: &Option<String>) -> String {
+		let mut ftype = "Func<".to_string();
+		if let Some(ref pvec) = *params {
+			match pvec.len() {
+				0 => ftype.push_str("_"),
+				1 => ftype.push_str(pvec[0].typename()),
+				_ => {
+					ftype.push_str("(");
+					for (i,p) in pvec.iter().enumerate() {
+						ftype.push_str(p.typename());
+						if i != pvec.len() - 1 {
+							ftype.push_str(",");
+						}
+					}
+					ftype.push_str(")");
+				}
+			}
+		} else {
+			ftype.push_str("_");
+		}
+		ftype.push_str(",");
+		if let Some(ref rval) = *retval {
+			ftype.push_str(rval);
+		} else {
+			ftype.push_str("_");
+		}
+		ftype.push_str(">");
+		ftype
+	}
+
+	pub fn check_valid_type(ty: &str) -> bool {
+		let re = Regex::new(r"^(Func<)(_{1}|(\(([A-Za-z]+, *)+([A-Za-z]+)\)|[A-Za-z]+), *([A-Za-z]+|_)>)").unwrap();
+		re.is_match(ty)
 	}
 }

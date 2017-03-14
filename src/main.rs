@@ -5,6 +5,9 @@
 #![allow(unknown_lints)]
 #![allow(unused_variables)]
 
+extern crate regex;
+extern crate uuid;
+
 #[macro_use]
 
 mod lib;

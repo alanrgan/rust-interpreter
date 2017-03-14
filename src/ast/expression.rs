@@ -2,13 +2,14 @@ use super::ast::*;
 use super::token::*;
 use super::types::*;
 use super::list::*;
-use super::func::ArgList;
+use super::func::{ArgList,Function};
 
 #[derive(Debug, Clone)]
 pub enum Expression {
 	BinOp(Box<BinOpExpression>),
 	BrackOp(Box<BrackOpExpression>),
 	Call { name: String, args: Option<ArgList> },
+	Closure(Box<Function>),
 	Value(TypedItem),
 	Variable(String),
 	Empty,
@@ -51,6 +52,12 @@ impl From<List> for Expression {
 
 impl From<Primitive> for Expression {
 	fn from(some: Primitive) -> Expression {
+		Expression::Value(some.into())
+	}
+}
+
+impl From<Function> for Expression {
+	fn from(some: Function) -> Expression {
 		Expression::Value(some.into())
 	}
 }

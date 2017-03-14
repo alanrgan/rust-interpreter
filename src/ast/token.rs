@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use super::expression::*;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq)]
 pub enum Token {
 	Integer(i32),
 	Bool(bool),

@@ -1,5 +1,6 @@
 use lexer::Lexer;
 use ast::*;
+use regex::Regex;
 
 pub struct Parser<'a> {
 	lexer: Lexer<'a>,
@@ -212,7 +213,9 @@ impl<'a> Parser<'a> {
 	fn param(&mut self) -> Parameter {
 		let id = self.ident().expect("expected identifier in parameter list");
 		self.eat(Token::Colon);
-		let ty = self.ident().expect("expected identifier in type specification");
+		let ty = self.parse_type();
+		self.eat_current();
+		//println!("ty is {}", ty);
 		Parameter::Full{ varname: id, typename: ty }
 	}
 
@@ -232,11 +235,7 @@ impl<'a> Parser<'a> {
 		self.eat(Token::Let);
 		let var = self.variable();
 		self.eat(Token::Colon);
-		let tyname = match self.current_token {
-			Some(Token::Ident(ref tname)) => tname.clone(),
-			_ => panic!("expected type specification in variable declaration, got {:?}",
-						 self.current_token)
-		};
+		let tyname = self.parse_type();
 		self.eat_current();
 		let assign = match self.current_token.clone() {
 			Some(Token::Equals) => Some(self.assignment(var.clone())),
@@ -248,6 +247,39 @@ impl<'a> Parser<'a> {
 		 				   assign: assign,
 		 				   in_func: false
 		 				 }))
+	}
+
+	fn parse_type(&mut self) -> String {
+		let mut tyname = match self.current_token {
+			Some(Token::Ident(ref tname)) => {
+				if tname == "Func" {
+					("".to_string(), true)
+				} else {
+					(tname.clone(), false)
+				}
+			},
+			_ => panic!("expected type specification in variable declaration, got {:?}",
+						 self.current_token)
+		};
+		if tyname.1 {
+			self.eat_current();
+			let re = Regex::new(r"[A-Za-z0-9\(\),<_ ]").unwrap();
+			let mut t = "Func<".to_string();
+			t.push_str(&self.lexer.consume_while(
+					  |c| re.is_match(&c.to_string()))
+					  .into_iter()
+					  .collect::<String>());
+			loop {
+				if let Some(Token::GThan) = self.current_token {
+					t.push_str(">");
+					break;
+				} else {
+					self.eat_current();
+				}
+			}
+			tyname.0 = t.replace(" ", "");
+		}
+		tyname.0
 	}
 
 	fn assignment(&mut self, var: Expression) -> Statement {
@@ -348,7 +380,9 @@ impl<'a> Parser<'a> {
 				self.eat(Token::RParen);
 				expr
 			},
-			Token::Backslash => self.closure(),
+			Token::Fn => {
+				self.closure()
+			},
 			Token::Ident(vname) => {
 				let var = {
 					let v = self.variable();
@@ -447,7 +481,25 @@ impl<'a> Parser<'a> {
 	}
 
 	fn closure(&mut self) -> Expression {
-		Expression::Empty
+		self.eat(Token::Fn);
+		let mut params = None;
+		if let Some(Token::LParen) = self.current_token {
+			self.eat(Token::LParen);
+			params = self.param_list();
+			self.eat(Token::RParen);
+		}
+
+		let mut rtype = None;
+		if let Some(Token::Colon) = self.current_token {
+			self.eat(Token::Colon);
+			rtype = self.ident();
+			if rtype.is_none() {
+				panic!("Expected return type in function declaration");
+			}
+		}
+
+		let conseq = self.compound_statement();
+		Expression::from(Function::new(params, conseq, rtype))
 	}
 
 	fn string(&mut self) -> String {

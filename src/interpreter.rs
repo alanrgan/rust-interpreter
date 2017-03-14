@@ -1,6 +1,7 @@
 use ast::*;
 use parser::Parser;
 use std::fmt::{Formatter, Debug, Error};
+use uuid::Uuid;
 
 pub struct Interpreter<'a> {
 	parser: Parser<'a>,
@@ -134,9 +135,17 @@ impl<'a> Interpreter<'a> {
 												 name, func_rtype, rtype));
 						}
 					}
+				} else if let Some(val) = env.get_var(name) {
+					if let Some(TypedItem::FnPtr(ref id)) = val.value {
+						let expr = Expression::Call{name: id.clone(), args: args.clone()};
+						return self.visit_expr(&expr);
+					} else {
+						retval = Err(format!("Function {} is not defined in this scope", name));
+					}
 				} else {
 					retval = Err(format!("Function {} is not defined in this scope", name));
 				}
+
 				if retval.is_ok() {
 					retval.unwrap().unwrap_ret()
 				} else { retval }
@@ -282,25 +291,43 @@ impl<'a> Interpreter<'a> {
 				}
 			},
 			Statement::Assign{ref var, ref value, ref in_func} => {
-				//println!("i am in assign and scope vars is {:?}", self.envs.current_scope().vars);
 				let val = self.visit_expr(value);
-				if let Err(_) = val { return val; }
+				if val.is_err() { return val; }
 				let val = val.unwrap();
 				match (var, value) {
 					(&Expression::Variable(ref vname), _) => {
 						let value = Value::new(vname.clone(), val.typename(), Some(val.clone()));
 						{
+							let tname = if let TypedItem::FnPtr(ref id) = val {
+						    	self.envs.current_scope().get_func(id).unwrap().clone().ty
+						    } else {
+						    	val.typename()
+						    };
 							let elem = self.envs.current_scope().get_mut(vname)
 									   .expect(&format!("Variable '{}' not declared", vname));
 						
 						    let expected_type = elem.clone().unwrap().ty_name;
-						    if expected_type != val.typename() {
+
+						    if expected_type != tname {
 						    	return Err(format!("mismatched types: expected {}, found {}",
-						    			expected_type, val.typename()));
+						    			expected_type, tname));
 						    }
 						}
-					    Env::set(&mut self.envs, vname.clone(), value, *in_func);
-						Ok(val)
+
+						if let TypedItem::Closure(ref b) = val {
+							let mut id = Uuid::new_v4().simple().to_string();
+							id = format!("{}{}","@",id);
+							self.envs.current_scope().def_func(id.clone(), *b.clone());
+							let ptr = TypedItem::FnPtr(id.clone());
+							let v = Value::new(vname.clone(), val.typename(), Some(ptr.clone()));
+					    	Env::set(&mut self.envs, vname.clone(), v, *in_func);
+					    	Ok(ptr)
+					    } /*else if let TypedItem::FnPtr(ref id) = val {
+					    	let func = 
+					    }*/ else {
+					    	Env::set(&mut self.envs, vname.clone(), value, *in_func);
+							Ok(val)
+						}
 					},
 					(&Expression::BrackOp(ref brack_expr), _) => {
 						let indices = brack_expr.indices.iter()
@@ -323,25 +350,27 @@ impl<'a> Interpreter<'a> {
 			},
 			Statement::Let(ref lst) => {
 				let ty = lst.ty.clone();
-				let prevval = if let Some(val) = self.envs.current_scope().vars.get(&lst.vname) {
-					val.clone().map(|x| x.value.unwrap())
-				} else { Some(TypedItem::empty())};
-				let val = Value::new(lst.vname.clone(), ty.clone(), prevval);
-				Env::set(&mut self.envs, lst.vname.clone(), val.into(), lst.in_func);
-				let assigned_val = {
-					if let Some(ref statement) = lst.assign {
-						Some(try!(self.visit_statement(statement)))
+				if !self.check_type(&ty) {
+					Err(format!("Type {} is not defined", ty))
+				} else {
+					let prevval = if let Some(val) = self.envs.current_scope().vars.get(&lst.vname) {
+						val.clone().map(|x| x.value.unwrap())
 					} else {
-						None
-					}
-				};
+						Some(TypedItem::empty())
+					};
+					let val = Value::new(lst.vname.clone(), ty.clone(), prevval);
+					Env::set(&mut self.envs, lst.vname.clone(), val.into(), lst.in_func);
+					let assigned_val = {
+						if let Some(ref statement) = lst.assign {
+							Some(try!(self.visit_statement(statement)))
+						} else {
+							None
+						}
+					};
 
-				if self.envs.current_scope().has_type(&ty) {
 					let val = Value::new(lst.vname.clone(), ty.clone(), assigned_val.clone());
 					Env::set(&mut self.envs, lst.vname.clone(), val.into(), lst.in_func);
 					Ok(assigned_val.unwrap_or_else(TypedItem::empty))
-				} else {
-					Err(format!("Type {} is not defined", ty))
 				}
 			},
 			Statement::Define(ref obj) => {
@@ -353,8 +382,8 @@ impl<'a> Interpreter<'a> {
 			},
 			Statement::FuncDef{ref name, ref func} => {
 				use std::collections::HashSet;
-
 				let fun = *func.clone();
+				// check for duplicate parameter names
 				if let Some(ref param_list) = fun.params {
 					let has_dup_param = {
 						param_list.iter().fold((false, HashSet::new()), |acc, x| {
@@ -379,7 +408,7 @@ impl<'a> Interpreter<'a> {
 				self.visit_expr(call)
 			},
 			Statement::Return{ref rval} => {
-				println!("Visiting return... {:?}\n", self.envs.current_scope().vars);
+				//println!("Visiting return... {:?}\n", self.envs.current_scope().vars);
 				rval.as_ref().map_or(Ok(TypedItem::empty()), |expr| self.visit_expr(expr))
 			},
 			Statement::Macro(ref mac) => {
@@ -467,6 +496,10 @@ impl<'a> Interpreter<'a> {
 	fn fetch_var_mut(&mut self, vname: &str) -> Result<&mut Option<Value>, String> {
 		self.envs.current_scope().get_mut(vname)
 				 .ok_or("variable does not exist in this scope".to_string())
+	}
+
+	fn check_type(&mut self, ty: &str) -> bool {
+		self.envs.current_scope().has_type(ty) || Function::check_valid_type(ty)
 	}
 }
 

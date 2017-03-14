@@ -31,3 +31,9 @@ impl Closure {
 		self.args.0.insert(name, AnonType::Nothing);
 	}
 }
+
+impl Default for Closure {
+	fn default() -> Self {
+		Self::new()
+	}
+}
