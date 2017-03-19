@@ -1,5 +1,6 @@
 use super::statement::Statement;
 use super::expression::Expression;
+use std::collections::HashSet;
 use regex::Regex;
 
 type NameArgPair = (Vec<Statement>, Vec<String>);
@@ -34,6 +35,20 @@ impl Parameter {
 
 #[derive(Debug, Clone)]
 pub struct ArgList(pub Vec<Expression>);
+
+#[derive(Debug, Clone)]
+pub struct FnPtr {
+	pub fname: String,
+	pub ftype: String,
+	pub is_def: bool,
+	pub def: Option<Box<Function>>
+}
+
+impl FnPtr {
+	pub fn new(fname: String, ftype: String, isdef: bool, def: Option<Function>) -> FnPtr {
+		FnPtr{fname: fname, ftype: ftype, is_def: isdef, def: def.map(Box::new)}
+	}
+}
 
 impl Function {
 	pub fn new(params: Option<Vec<Parameter>>, conseq: Statement, rtype: Option<String>) -> Function {
@@ -104,8 +119,89 @@ impl Function {
 		ftype
 	}
 
+	// returns the number of successive return values that are functions
+	pub fn chain_depth(&self) -> i32 {
+		match self.retval {
+			Some(ref rval) if rval.starts_with("Func<") => {
+				let mut depth = 2;
+				let mut next_rval = parse_fn_rval(rval);
+				while next_rval.starts_with("Func<") {
+					depth += 1;
+					next_rval = parse_fn_rval(&next_rval);
+				}
+				depth
+			},
+			_ => 1
+		}
+	}
+
 	pub fn check_valid_type(ty: &str) -> bool {
 		let re = Regex::new(r"^(Func<)(_{1}|(\(([A-Za-z]+, *)+([A-Za-z]+)\)|[A-Za-z]+), *([A-Za-z]+|_)>)").unwrap();
 		re.is_match(ty)
 	}
+
+	pub fn check_dup_param(param_list: Option<Vec<Parameter>>, name: String) -> Result<(),String> {
+		if param_list.is_none() { return Ok(()); }
+		let param_list = param_list.unwrap();
+		let has_dup_param = {
+			param_list.iter().fold((false, HashSet::new()), |acc, x| {
+				let mut hset = acc.1.clone();
+				let mut res = acc.0;
+				if let Parameter::Full{ ref varname, ..} = *x {
+					res = res || acc.1.contains(varname);
+					hset.insert(varname);
+				}
+				(res, hset)
+			}).0
+		};
+		if has_dup_param {
+			Err(format!("function definition for {} has duplicate parameter names", name))
+		} else {
+			Ok(())
+		}
+	}
+}
+/**
+
+Func<(int,int), Func<_,_>>
+Func<_,Func<_,Func<int,int>>>
+*/
+
+#[derive(Default)]
+struct Index {
+	ind: i32,
+	ltct: i32,
+	parenct: i32,
+	sat: bool
+}
+
+impl Index {
+	fn new(ind: i32, ltct: i32, parenct: i32, sat: bool) -> Index {
+		Index{ind: ind,
+			  ltct: ltct,
+			  parenct: parenct,
+			  sat: sat}
+	}
+}
+
+pub fn parse_fn_rval(s: &str) -> String {
+	let ind = s.chars().fold(Index{..Default::default()},
+		|acc, c| {
+			if acc.sat {
+				acc
+			} else if acc.ltct == 1 && c == ',' && acc.parenct == 0 {
+				Index::new(acc.ind+1, acc.ltct, 0, true)
+			} else if c == '<' {
+				Index::new(acc.ind+1, acc.ltct+1, acc.parenct, false)
+			} else if c == '>' {
+				Index::new(acc.ind+1, acc.ltct-1, acc.parenct, false)
+			} else if c == '(' {
+				Index::new(acc.ind+1, acc.ltct, acc.parenct+1, false)
+			} else if c == ')' {
+				Index::new(acc.ind+1, acc.ltct, acc.parenct-1, false)
+			} else {
+				Index::new(acc.ind+1, acc.ltct, acc.parenct, false)
+			}
+		}).ind;
+	s[(ind as usize)..(s.len()-1 as usize)].into()
 }

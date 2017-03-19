@@ -119,25 +119,51 @@ impl<'a> Interpreter<'a> {
 				let mut retval = Ok(TypedItem::empty());
 				let env = self.envs.current_scope().clone();
 				if let Some(func) = env.get_func(name) {
-					let (assigns, vnames) = func.match_args(alias.clone(), args).unwrap();
-					for stmt in assigns {
-						let res = self.visit_statement(&stmt);
-						if res.is_err() { return res; }
+					let mut cfunc = func.clone();
+					// check fn depth and compare with args length
+					// to prevent any execution if there is an error
+					if func.chain_depth() < args.len() as i32 {
+						return Err("Function call on non-function type".into());
 					}
-					self.envs.alias(vnames);
-					retval = self.visit_statement(&func.conseq);
-					self.envs.pop();
-					if retval.is_ok() {
-						let rtype = retval.clone().unwrap().unwrap_ret().unwrap().typename();
-						let func_rtype = func.rtype();
-						if rtype != func.rtype() {
-							retval = Err(format!("{}: Expected return type {}, got {}",
-												 name, func_rtype, rtype));
+					for arg in args {
+						let (assigns, vnames) = cfunc.match_args(alias.clone(), arg).unwrap();
+						for stmt in assigns {
+							let res = self.visit_statement(&stmt);
+							if res.is_err() { return res; }
+						}
+						self.envs.alias(vnames);
+						retval = self.visit_statement(&cfunc.conseq);
+						self.envs.pop();
+						if retval.is_ok() {
+							let rval = retval.clone().unwrap().unwrap_ret();
+							let rtype = rval.as_ref().unwrap().typename();
+							let func_rtype = cfunc.rtype();
+							if rtype != func_rtype {
+								retval = Err(format!("{}: Expected return type {}, got {:?}",
+													 alias, func_rtype, rval/*rtype*/));
+								break;
+							} 
+							match rval {
+								Ok(TypedItem::Closure(ref b)) =>  cfunc = *b.clone(),
+								Ok(TypedItem::FnPtr(ref fptr)) => {
+									if let Some(func) = fptr.clone().def {
+										cfunc = *func;
+									} else {
+										cfunc = self.envs.current_scope()
+														 .get_func(&fptr.fname)
+														 .expect("Unexpected FnPtr error")
+														 .clone();
+									}
+								}
+								_ => {}
+							}
 						}
 					}
 				} else if let Some(val) = env.get_var(name) {
-					if let Some(TypedItem::FnPtr{ref fname, ..}) = val.value {
-						let expr = Expression::Call{name: fname.clone(), alias: name.clone(), args: args.clone()};
+					if let Some(TypedItem::FnPtr(ref fptr)) = val.value {
+						let expr = Expression::Call{ name: fptr.fname.clone(),
+													 alias: name.clone(),
+													 args: args.clone()};
 						return self.visit_expr(&expr);
 					} else {
 						retval = Err(format!("Function {} is not defined in this scope", name));
@@ -208,7 +234,18 @@ impl<'a> Interpreter<'a> {
 						},
 						Statement::Return{ ref rval } => {
 							let expr = if rval.is_some() {
-								Ok(TypedItem::from(self.visit_expr(rval.as_ref().unwrap())))
+								let e = self.visit_expr(rval.as_ref().unwrap());
+								if let Ok(TypedItem::FnPtr(ref fptr)) = e {
+									let fun = self.envs.current_scope()
+													   .get_func(&fptr.fname)
+													   .cloned().unwrap();
+									let mut ptr_with_def = fptr.clone();
+									ptr_with_def.def = Some(Box::new(fun));
+									let res = Ok(TypedItem::FnPtr(ptr_with_def));
+									Ok(res.into())
+								} else {
+									Ok(e.into())
+								}
 							} else {
 								Ok(TypedItem::empty())
 							};
@@ -298,9 +335,18 @@ impl<'a> Interpreter<'a> {
 					(&Expression::Variable(ref vname), _) => {
 						let mut vitem = val.clone();
 						{
-							let tname = if let TypedItem::FnPtr{ref fname, ..} = val {
-								vitem = TypedItem::FnPtr{fname: fname.clone(), is_def: false};
-						    	self.envs.current_scope().get_func(fname).unwrap().clone().ty
+							let tname = if let TypedItem::FnPtr(ref fptr) = val {
+								self.extract_fnptr(fptr);
+								let ty = self.envs.current_scope()
+												  .get_func(&fptr.fname)
+												  .unwrap().clone().ty;
+								vitem = TypedItem::FnPtr(FnPtr::new(
+														 fptr.fname.clone(),
+														 ty.clone(),
+														 false,
+														 fptr.def.clone()
+														 		 .map(|x| *x.clone())));
+						    	ty
 						    } else {
 						    	val.typename()
 						    };
@@ -376,29 +422,9 @@ impl<'a> Interpreter<'a> {
 				Ok(TypedItem::empty())
 			},
 			Statement::FuncDef{ref name, ref func} => {
-				use std::collections::HashSet;
 				let fun = *func.clone();
-				// check for duplicate parameter names
-				if let Some(ref param_list) = fun.params {
-					let has_dup_param = {
-						param_list.iter().fold((false, HashSet::new()), |acc, x| {
-							let mut hset = acc.1.clone();
-							let mut res = acc.0;
-							if let Parameter::Full{ ref varname, ..} = *x {
-								res = res || acc.1.contains(varname);
-								hset.insert(varname);
-							}
-							(res, hset)
-						}).0
-					};
-					if has_dup_param {
-						return Err(format!("function definition for {} has duplicate parameter names", name));
-					}
-				}
 				let val = TypedItem::Closure(func.clone());
 				self.def_func_ptr(name.clone(), &val, func, false, true);
-				/*self.envs.current_scope()
-						 .def_func(name.clone(), fun);*/
 				Ok(TypedItem::empty())
 			},
 			Statement::FuncCall(ref call) => {
@@ -406,7 +432,22 @@ impl<'a> Interpreter<'a> {
 			},
 			Statement::Return{ref rval} => {
 				//println!("Visiting return... {:?}\n", self.envs.current_scope().vars);
-				rval.as_ref().map_or(Ok(TypedItem::empty()), |expr| self.visit_expr(expr))
+				println!("rval is {:?}", rval);
+				rval.as_ref()
+					.map_or(Ok(TypedItem::empty()),
+							|expr| {
+								let e = self.visit_expr(expr);
+								if let Ok(TypedItem::FnPtr(ref fptr)) = e {
+									let fun = self.envs.current_scope()
+													   .get_func(&fptr.fname)
+													   .cloned().unwrap();
+									let mut ptr_with_def = fptr.clone();
+									ptr_with_def.def = Some(Box::new(fun));
+									Ok(TypedItem::FnPtr(ptr_with_def))
+								} else {
+									e
+								}
+							})
 			},
 			Statement::Macro(ref mac) => {
 				if mac.name == "fail" {
@@ -427,11 +468,17 @@ impl<'a> Interpreter<'a> {
 		}
 	}
 
+	fn extract_fnptr(&mut self, fptr: &FnPtr) {
+		if let Some(func) = fptr.def.clone() {
+			self.envs.current_scope().def_func(fptr.fname.clone(), *func);
+		}
+	}
+
 	fn def_func_ptr(&mut self, vname: String, val: &TypedItem, b: &Box<Function>, in_func: bool, is_def: bool) -> TypedItem {
 		let mut id = Uuid::new_v4().simple().to_string();
 		id = format!("{}{}","@",id);
 		self.envs.current_scope().def_func(id.clone(), *b.clone());
-		let ptr = TypedItem::FnPtr{fname: id, is_def: is_def};
+		let ptr = TypedItem::FnPtr(FnPtr::new(id, b.clone().ty, is_def, None));
 		let v = Value::new(vname.clone(), val.typename(), Some(ptr.clone()));
     	Env::set(&mut self.envs, vname.clone(), v, in_func);
     	ptr

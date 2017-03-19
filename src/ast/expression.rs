@@ -8,7 +8,7 @@ use super::func::{ArgList,Function};
 pub enum Expression {
 	BinOp(Box<BinOpExpression>),
 	BrackOp(Box<BrackOpExpression>),
-	Call { name: String, alias: String, args: Option<ArgList> },
+	Call { name: String, alias: String, args: Vec<Option<ArgList>> },
 	Closure(Box<Function>),
 	Value(TypedItem),
 	Variable(String),

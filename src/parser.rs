@@ -133,17 +133,15 @@ impl<'a> Parser<'a> {
 	}
 
 	fn compound_statement(&mut self) -> Statement {
-		if let Some(ref tok) = self.current_token.clone() {
-			if Token::equals(tok, &Token::LCurl) {
-				self.eat(Token::LCurl);
-				if let Some(Token::RCurl) = self.current_token {}
-				else {
-					let statement = self.statement_list();
-					self.eat(Token::RCurl);
-					return statement;
-				}
+		if let Some(Token::LCurl) = self.current_token.clone() {
+			self.eat(Token::LCurl);
+			if let Some(Token::RCurl) = self.current_token {}
+			else {
+				let statement = self.statement_list();
 				self.eat(Token::RCurl);
+				return statement;
 			}
+			self.eat(Token::RCurl);
 		}
 		Statement::Empty
 	}
@@ -187,14 +185,15 @@ impl<'a> Parser<'a> {
 		let mut rtype = None;
 		if let Some(Token::Colon) = self.current_token {
 			self.eat(Token::Colon);
-			rtype = self.ident();
+			rtype = self.parse_type().ok();
+			self.eat_current();
 			if rtype.is_none() {
 				panic!("Expected return type in function declaration");
 			}
 		}
 
 		let conseq = self.compound_statement();
-
+		Function::check_dup_param(params.clone(), fname.clone()).unwrap();
 		Statement::FuncDef{ name: fname, func: Box::new(Function::new(params, conseq, rtype)) }
 	}
 
@@ -216,7 +215,7 @@ impl<'a> Parser<'a> {
 		let ty = self.parse_type();
 		self.eat_current();
 		//println!("ty is {}", ty);
-		Parameter::Full{ varname: id, typename: ty }
+		Parameter::Full{ varname: id, typename: ty.unwrap() }
 	}
 
 	fn arglist(&mut self) -> Option<ArgList> {
@@ -235,7 +234,7 @@ impl<'a> Parser<'a> {
 		self.eat(Token::Let);
 		let var = self.variable();
 		self.eat(Token::Colon);
-		let tyname = self.parse_type();
+		let tyname = self.parse_type().unwrap();
 		self.eat_current();
 		let assign = match self.current_token.clone() {
 			Some(Token::Equals) => Some(self.assignment(var.clone())),
@@ -249,37 +248,42 @@ impl<'a> Parser<'a> {
 		 				 }))
 	}
 
-	fn parse_type(&mut self) -> String {
-		let mut tyname = match self.current_token {
+	fn parse_type(&mut self, ) -> Result<String, String> {
+		let tyname = match self.current_token {
 			Some(Token::Ident(ref tname)) => {
 				if tname == "Func" {
-					("".to_string(), true)
+					Ok(("".to_string(), true))
 				} else {
-					(tname.clone(), false)
+					Ok((tname.clone(), false))
 				}
 			},
-			_ => panic!("expected type specification in variable declaration, got {:?}",
-						 self.current_token)
+			_ => Err(format!("expected type specification in variable declaration, got {:?}",
+						 self.current_token))
 		};
-		if tyname.1 {
-			self.eat_current();
-			let re = Regex::new(r"[A-Za-z0-9\(\),<_ ]").unwrap();
-			let mut t = "Func<".to_string();
-			t.push_str(&self.lexer.consume_while(
-					  |c| re.is_match(&c.to_string()))
-					  .into_iter()
-					  .collect::<String>());
-			loop {
-				if let Some(Token::GThan) = self.current_token {
-					t.push_str(">");
-					break;
-				} else {
-					self.eat_current();
+		if tyname.is_err() {
+			tyname.map(|_| "".into())
+		} else {
+			let mut tyname = tyname.unwrap();
+			if tyname.1 {
+				self.eat_current();
+				let re = Regex::new(r"[A-Za-z0-9\(\),<_ ]").unwrap();
+				let mut t = "Func<".to_string();
+				t.push_str(&self.lexer.consume_while(
+						  |c| re.is_match(&c.to_string()))
+						  .into_iter()
+						  .collect::<String>());
+				loop {
+					if let Some(Token::GThan) = self.current_token {
+						t.push_str(">");
+						break;
+					} else {
+						self.eat_current();
+					}
 				}
+				tyname.0 = t.replace(" ", "");
 			}
-			tyname.0 = t.replace(" ", "");
+			Ok(tyname.0)
 		}
-		tyname.0
 	}
 
 	fn assignment(&mut self, var: Expression) -> Statement {
@@ -335,10 +339,14 @@ impl<'a> Parser<'a> {
 	}
 
 	fn parse_call(&mut self, fname: String) -> Expression {
-		self.eat(Token::LParen);
-		let arglist = self.arglist();
-		self.eat(Token::RParen);
-		Expression::Call{name: fname.clone(), alias: fname, args: arglist}
+		let mut argv = vec![];
+		while let Some(Token::LParen) = self.current_token {
+			self.eat(Token::LParen);
+			argv.push(self.arglist());
+			self.eat(Token::RParen);
+
+		}
+		Expression::Call{name: fname.clone(), alias: fname, args: argv}
 	}
 
 	fn define(&mut self) -> Statement {
@@ -380,9 +388,7 @@ impl<'a> Parser<'a> {
 				self.eat(Token::RParen);
 				expr
 			},
-			Token::Fn => {
-				self.closure()
-			},
+			Token::Fn => self.closure(),
 			Token::Ident(vname) => {
 				let var = {
 					let v = self.variable();
@@ -499,6 +505,7 @@ impl<'a> Parser<'a> {
 		}
 
 		let conseq = self.compound_statement();
+		Function::check_dup_param(params.clone(), "".to_string()).unwrap();
 		Expression::from(Function::new(params, conseq, rtype))
 	}
 

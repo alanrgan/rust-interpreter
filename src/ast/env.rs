@@ -66,8 +66,8 @@ impl Env {
 
 		// copy all function pointers over
 		for (key, val) in &self.vars{
-			if let Some(TypedItem::FnPtr{ref fname, is_def}) = val.as_ref().unwrap().value {
-				if is_def {
+			if let Some(TypedItem::FnPtr(ref fptr)) = val.as_ref().unwrap().value {
+				if fptr.is_def {
 					e.vars.insert(key.clone(), val.clone());
 				}
 			}

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use super::token::*;
 use super::list::*;
-use super::func::Function;
+use super::func::{Function, FnPtr};
 use super::value::Value;
 
 pub type VisitResult = Result<TypedItem, String>;
@@ -57,7 +57,7 @@ pub enum TypedItem {
 	Primitive(Primitive),
 	Object(Object),
 	Closure(Box<Function>),
-	FnPtr{fname: String, is_def: bool},
+	FnPtr(FnPtr), //{fname: String, ftype: String, is_def: bool, },
 	Value(Box<Value>), // essentially a named reference
 	RetVal(Box<VisitResult>)
 }
@@ -71,6 +71,7 @@ impl TypedItem {
 			TypedItem::Primitive(Primitive::Integer(_)) => "int".to_string(),
 			TypedItem::Primitive(Primitive::Str(_)) => "str".to_string(),
 			TypedItem::Primitive(Primitive::Array(_)) => "list".to_string(),
+			TypedItem::FnPtr(ref fptr) => fptr.ftype.clone(),
 			_ => "".to_string()
 		}
 	}
