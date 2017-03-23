@@ -72,7 +72,7 @@ impl TypedItem {
 			TypedItem::Primitive(Primitive::Str(_)) => "str".to_string(),
 			TypedItem::Primitive(Primitive::Array(_)) => "list".to_string(),
 			TypedItem::FnPtr(ref fptr) => fptr.ftype.clone(),
-			_ => "".to_string()
+			_ => "_".to_string()
 		}
 	}
 
@@ -121,6 +121,12 @@ impl fmt::Display for TypedItem {
 			},
 			_ => write!(f, "")
 		}
+	}
+}
+
+impl From<bool> for TypedItem {
+	fn from(some: bool) -> TypedItem {
+		TypedItem::Primitive(Primitive::Bool(some))
 	}
 }
 

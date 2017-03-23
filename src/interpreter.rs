@@ -34,12 +34,8 @@ impl<'a> Interpreter<'a> {
 	fn visit_expr(&mut self, expr: &Expression) -> Result<TypedItem, String> {
 		match *expr {
 			Expression::BinOp(ref bexpr) => {
-				let left = self.visit_expr(&bexpr.left);
-				let right = self.visit_expr(&bexpr.right);
-				if left.is_err() { return left; }
-				if right.is_err() { return right; }
-				let left = left.unwrap();
-				let right = right.unwrap();
+				let left = self.visit_expr(&bexpr.left)?;
+				let right = self.visit_expr(&bexpr.right)?;
 				match bexpr.op {
 					// TODO: convert the following to macros if possible
 					// or 'lift' the operators by passing in closures
@@ -99,9 +95,7 @@ impl<'a> Interpreter<'a> {
 					BinOp::NEquals => apply_compare(left, right, |first, second| first != second),
 				}
 			},
-			Expression::BrackOp(ref brackop) => {
-				self.visit_brackets(brackop)
-			},
+			Expression::BrackOp(ref brackop) => self.visit_brackets(brackop),
 			Expression::UnaryOp(ref op_expr) => {
 				let val = self.visit_expr(&op_expr.val);
 				match (&op_expr.op, val.clone()) {
@@ -139,8 +133,8 @@ impl<'a> Interpreter<'a> {
 							let rtype = rval.as_ref().unwrap().typename();
 							let func_rtype = cfunc.rtype();
 							if rtype != func_rtype {
-								retval = Err(format!("{}: Expected return type {}, got {:?}",
-													 alias, func_rtype, rval/*rtype*/));
+								retval = Err(format!("{}: Expected return type {}, got {}",
+													 alias, func_rtype, rtype));
 								break;
 							} 
 							match rval {
@@ -288,14 +282,12 @@ impl<'a> Interpreter<'a> {
 				let pred_val = self.visit_expr(pred);
 				while let Ok(Primitive::Bool(value)) = self.visit_expr(pred).unwrap().into_primitive() {
 					if value {
-						if let Ok(Primitive::LTerm(TermToken::Break)) = self.visit_statement(conseq)
-																		.unwrap()
-																		.into_primitive()
-						{
-							break;
+						match self.visit_statement(conseq) {
+							Ok(TypedItem::Primitive(Primitive::LTerm(TermToken::Break))) => break,
+							res@Ok(TypedItem::RetVal(_)) => return res,
+							_ => {}
 						}
-					}
-					else { break; }
+					} else { break; }
 				}
 				pred_val.unwrap().unpack::<bool>()
 					.map_err(|_| "expected boolean expression in 'while' statement".to_string())
@@ -319,6 +311,7 @@ impl<'a> Interpreter<'a> {
 						Env::set(&mut self.envs, vname.clone(), val, false);
 						match self.visit_statement(&fs.conseq) {
 							Ok(TypedItem::Primitive(Primitive::LTerm(TermToken::Break))) => break,
+							res@Ok(TypedItem::RetVal(_)) => return res,
 							_ => {}
 						};
 					}
@@ -589,13 +582,10 @@ impl Visitable for Statement {
 fn apply_logical<F>(left: TypedItem, right: TypedItem, f: F) -> Result<TypedItem, String>
 	where F: Fn(bool, bool) -> bool
 {
-	match (left, right) {
-		(TypedItem::Primitive(Primitive::Bool(first)),
-		 TypedItem::Primitive(Primitive::Bool(second))) => {
-			Ok(Primitive::Bool(f(first, second)).into())
-		},
-		_ => Err(String::from("Use of undefined logical operator"))
-	}
+	let left = left.unpack::<bool>();
+	let right = right.unpack::<bool>();
+	left.and_then(|l| right.map(|r| f(l,r).into()))
+   	    .map_err(|_| "Use of undefined logical operator".into())
 }
 
 fn apply_compare<F>(left: TypedItem, right: TypedItem, f: F) -> Result<TypedItem, String>

@@ -58,7 +58,7 @@ impl Function {
 
 	pub fn rtype(&self) -> String {
 		if self.retval.is_some() { self.retval.clone().unwrap() }
-		else { "".to_string() }
+		else { "_".to_string() }
 	}
 
 	/*
@@ -161,11 +161,6 @@ impl Function {
 		}
 	}
 }
-/**
-
-Func<(int,int), Func<_,_>>
-Func<_,Func<_,Func<int,int>>>
-*/
 
 #[derive(Default)]
 struct Index {
