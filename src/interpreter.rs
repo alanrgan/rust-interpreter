@@ -39,19 +39,9 @@ impl<'a> Interpreter<'a> {
 				match bexpr.op {
 					// TODO: convert the following to macros if possible
 					// or 'lift' the operators by passing in closures
-					BinOp::Plus => {
-						match (left, right) {
-							(TypedItem::Primitive(l), TypedItem::Primitive(r)) => {
-								Ok((l + r).into())
-							},
-							(TypedItem::Object(l), TypedItem::Object(r)) => {
-								// apply custom add func here
-								Ok(TypedItem::empty())
-							},
-							_ => Err("Use of undefined add operator".to_string())
-						}
-					},
+					BinOp::Plus => Ok(left + right),
 					BinOp::Minus => {
+						// TODO: do same thing here for 
 						match (left, right) {
 							(TypedItem::Primitive(l), TypedItem::Primitive(r)) => {
 								Ok((l-r).into())
@@ -170,6 +160,71 @@ impl<'a> Interpreter<'a> {
 					retval.unwrap().unwrap_ret()
 				} else { retval }
 			},
+			Expression::MyCall{ref left, ref alias, ref args} => {
+				let left = self.visit_expr(left)?;
+				println!("{:?}",left);
+				Ok(TypedItem::empty())
+				/*
+				let mut retval = Ok(TypedItem::empty());
+				let env = self.envs.current_scope().clone();
+				if let Some(func) = env.get_func(name) {
+					let mut cfunc = func.clone();
+					// check fn depth and compare with args length
+					// to prevent any execution if there is an error
+					if func.chain_depth() < args.len() as i32 {
+						return Err("Function call on non-function type".into());
+					}
+					for arg in args {
+						let (assigns, vnames) = cfunc.match_args(alias.clone(), arg).unwrap();
+						for stmt in assigns {
+							let res = self.visit_statement(&stmt);
+							if res.is_err() { return res; }
+						}
+						self.envs.alias(vnames);
+						retval = self.visit_statement(&cfunc.conseq);
+						self.envs.pop();
+						if retval.is_ok() {
+							let rval = retval.clone().unwrap().unwrap_ret();
+							let rtype = rval.as_ref().unwrap().typename();
+							let func_rtype = cfunc.rtype();
+							if rtype != func_rtype {
+								retval = Err(format!("{}: Expected return type {}, got {}",
+													 alias, func_rtype, rtype));
+								break;
+							} 
+							match rval {
+								Ok(TypedItem::Closure(ref b)) =>  cfunc = *b.clone(),
+								Ok(TypedItem::FnPtr(ref fptr)) => {
+									if let Some(func) = fptr.clone().def {
+										cfunc = *func;
+									} else {
+										cfunc = self.envs.current_scope()
+														 .get_func(&fptr.fname)
+														 .expect("Unexpected FnPtr error")
+														 .clone();
+									}
+								}
+								_ => {}
+							}
+						}
+					}
+				} else if let Some(val) = env.get_var(name) {
+					if let Some(TypedItem::FnPtr(ref fptr)) = val.value {
+						let expr = Expression::Call{ name: fptr.fname.clone(),
+													 alias: name.clone(),
+													 args: args.clone()};
+						return self.visit_expr(&expr);
+					} else {
+						retval = Err(format!("Function {} is not defined in this scope", name));
+					}
+				} else {
+					retval = Err(format!("Function {} is not defined in this scope", name));
+				}
+
+				if retval.is_ok() {
+					retval.unwrap().unwrap_ret()
+				} else { retval }*/
+			},
 			Expression::Variable(ref vname) => {
 				let res = self.envs.current_scope()
 						 .get_var(vname)
@@ -184,8 +239,26 @@ impl<'a> Interpreter<'a> {
 			}
 			Expression::Value(ref prim) => {
 				let mut prim = prim.clone();
+				if let TypedItem::Tuple(ref mut tup) = prim {
+					if tup.body.len() == 0 {
+						for expr in &tup.exprs {
+							let e = self.visit_expr(expr)?;
+							tup.ty.push(e.typename().clone().into());
+							tup.body.push(e);
+						}
+					}
+				}
 				let _ = prim.unpack_mut::<List>().map(|list| self.expand_list(list));
 				Ok(prim)
+			},
+			Expression::DotOp(ref expr) => {
+				match expr.left {
+					Expression::Value(ref v) => self.apply_dot(v, &expr.right),
+					ref v @_ => {
+						let e = self.visit_expr(v)?;
+						self.apply_dot(&e, &expr.right)
+					}
+				}
 			},
 			_ => Ok(TypedItem::empty())
 		}
@@ -320,6 +393,7 @@ impl<'a> Interpreter<'a> {
 					Err("expected variable name in for loop".to_string())
 				}
 			},
+			// more type inference info here? unify types or such
 			Statement::Assign{ref var, ref value, ref in_func} => {
 				let val = self.visit_expr(value);
 				if val.is_err() { return val; }
@@ -343,12 +417,14 @@ impl<'a> Interpreter<'a> {
 						    } else {
 						    	val.typename()
 						    };
-							let elem = self.envs.current_scope().get_mut(vname)
+							let mut elem = self.envs.current_scope().get_mut(vname)
 									   .expect(&format!("Variable '{}' not declared", vname));
 						
 						    let expected_type = elem.clone().unwrap().ty_name;
-
-						    if expected_type != tname {
+						    if expected_type.is_empty() {
+						    	let inner_val = elem.as_mut().unwrap();
+						    	inner_val.ty_name = tname;
+						    } else if expected_type != tname {
 						    	return Err(format!("mismatched types: expected {}, found {}",
 						    			expected_type, tname));
 						    }
@@ -382,17 +458,19 @@ impl<'a> Interpreter<'a> {
 					_ => unreachable!()
 				}
 			},
+			// perform basic type inference here
 			Statement::Let(ref lst) => {
 				let ty = lst.ty.clone();
-				if !self.check_type(&ty) {
-					Err(format!("Type {} is not defined", ty))
+				if ty.is_some() && !self.check_type(ty.as_ref().unwrap()) {
+					Err(format!("Type {} is not defined", ty.as_ref().unwrap()))
 				} else {
 					let prevval = if let Some(val) = self.envs.current_scope().vars.get(&lst.vname) {
 						val.clone().map(|x| x.value.unwrap())
 					} else {
 						Some(TypedItem::empty())
 					};
-					let val = Value::new(lst.vname.clone(), ty.clone(), prevval);
+					let prelim_type = ty.clone().unwrap_or("".into());
+					let val = Value::new(lst.vname.clone(), prelim_type.clone(), prevval);
 					Env::set(&mut self.envs, lst.vname.clone(), val.into(), lst.in_func);
 					let assigned_val = {
 						if let Some(ref statement) = lst.assign {
@@ -402,7 +480,7 @@ impl<'a> Interpreter<'a> {
 						}
 					};
 
-					let val = Value::new(lst.vname.clone(), ty.clone(), assigned_val.clone());
+					let val = Value::new(lst.vname.clone(), prelim_type, assigned_val.clone());
 					Env::set(&mut self.envs, lst.vname.clone(), val.into(), lst.in_func);
 					Ok(assigned_val.unwrap_or_else(TypedItem::empty))
 				}
@@ -425,7 +503,7 @@ impl<'a> Interpreter<'a> {
 			},
 			Statement::Return{ref rval} => {
 				//println!("Visiting return... {:?}\n", self.envs.current_scope().vars);
-				println!("rval is {:?}", rval);
+				//println!("rval is {:?}", rval);
 				rval.as_ref()
 					.map_or(Ok(TypedItem::empty()),
 							|expr| {
@@ -479,12 +557,16 @@ impl<'a> Interpreter<'a> {
 
 	fn print_item(&self, t: TypedItem) {
 		// allow overriding of print function
-		match t {
-			TypedItem::Value(v) => {
-				self.print_item(v.value.unwrap_or_else(TypedItem::empty))
-			},
-			_ => print!("{}", t)
-		};
+		print!("{}",t.to_string());
+	}
+
+	fn apply_dot(&self, v: &TypedItem, right: &str) -> Result<TypedItem, String> {
+		match *v {
+			TypedItem::Tuple(ref tup) => tup.dot_val(right)
+											.map(|x| x.clone())
+											.map_err(|e| e.to_string()),
+			_ => Ok(TypedItem::empty())
+		}
 	}
 
 	fn visit_brackets(&mut self, expr: &BrackOpExpression) -> Result<TypedItem, String> {
@@ -546,7 +628,8 @@ impl<'a> Interpreter<'a> {
 	}
 
 	fn check_type(&mut self, ty: &str) -> bool {
-		self.envs.current_scope().has_type(ty) || Function::check_valid_type(ty)
+		let valid_tuple = Tuple::check_valid(ty);
+		self.envs.current_scope().has_type(ty) || Function::check_valid_type(ty) || valid_tuple
 	}
 }
 

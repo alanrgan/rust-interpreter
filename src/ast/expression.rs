@@ -4,16 +4,33 @@ use super::types::*;
 use super::list::*;
 use super::func::{ArgList,Function};
 
+pub trait MapIfNone<T> {
+    //type Item;
+    fn map_if_none(&self, other: Option<T>) -> Option<T>;
+}
+
 #[derive(Debug, Clone)]
 pub enum Expression {
 	BinOp(Box<BinOpExpression>),
 	BrackOp(Box<BrackOpExpression>),
+	DotOp(Box<DotOpExpression>),
 	Call { name: String, alias: String, args: Vec<Option<ArgList>> },
+	MyCall { left: Box<Expression>, alias: String, args: Vec<Option<ArgList>> },
 	Closure(Box<Function>),
 	Value(TypedItem),
 	Variable(String),
 	Empty,
 	UnaryOp(Box<UnaryOpExpression>)
+}
+
+impl MapIfNone<Expression> for Option<Expression> {
+	fn map_if_none(&self, other: Option<Expression>) -> Option<Expression> {
+		if self.is_none() {
+			other
+		} else {
+			self.clone()
+		}
+	}
 }
 
 impl Expression {
@@ -87,6 +104,16 @@ pub struct BinOpExpression {
 	pub op: BinOp,
 	pub left: Expression,
 	pub right: Expression
+}
+
+/*
+	left: Expression::Value(..)
+	right: String
+*/
+#[derive(Debug, Clone)]
+pub struct DotOpExpression {
+	pub left: Expression,
+	pub right: String
 }
 
 #[derive(Debug, Clone)]

@@ -33,7 +33,7 @@ pub struct Macro {
 #[derive(Debug, Clone)]
 pub struct LetStatement {
 	pub vname: String,
-	pub ty: String,
+	pub ty: Option<String>,
 	pub assign: Option<Statement>,
 	// used to distinguish assigning variables within function params vs
 	// regular
@@ -41,7 +41,7 @@ pub struct LetStatement {
 }
 
 impl Statement {
-	pub fn new_let(vname: String, ty: String, assign: Option<Statement>, in_func: bool) -> Statement {
+	pub fn new_let(vname: String, ty: Option<String>, assign: Option<Statement>, in_func: bool) -> Statement {
 		let s = LetStatement {
 			vname: vname,
 			ty: ty,

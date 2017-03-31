@@ -58,15 +58,7 @@ impl<'a> Parser<'a> {
 			Some(Token::For) => self.for_loop(),
 			Some(Token::While) => self.while_loop(),
 			Some(Token::Ident(vname)) => {
-				let mut var = {
-					let v = self.variable();
-					if let Some(Token::LParen) = self.current_token {
-						self.parse_call(vname.clone())
-					} else { v }
-				};
-				//println!("var {:?}", var);
-				//println!("curtok: {:?}", self.current_token);
-				var = self.parse_brackets(vname).unwrap_or(var);
+				let var = self.factor();
 				if let Expression::Call{..} = var {
 					return Statement::FuncCall(var);
 				}
@@ -233,9 +225,12 @@ impl<'a> Parser<'a> {
 	fn parse_let(&mut self) -> Statement {
 		self.eat(Token::Let);
 		let var = self.variable();
-		self.eat(Token::Colon);
-		let tyname = self.parse_type().unwrap();
-		self.eat_current();
+		let mut tyname = None;
+		if let Some(Token::Colon) = self.current_token {
+			self.eat(Token::Colon);
+			tyname = Some(self.parse_type().unwrap());
+			self.eat_current();
+		}
 		let assign = match self.current_token.clone() {
 			Some(Token::Equals) => Some(self.assignment(var.clone())),
 			_ => None
@@ -256,6 +251,28 @@ impl<'a> Parser<'a> {
 				} else {
 					Ok((tname.clone(), false))
 				}
+			},
+			Some(Token::LParen) => {
+				let mut tname = "(".to_string();
+				self.eat_current();
+				loop {
+					match self.current_token.clone() {
+						Some(Token::Ident(t)) => {
+							tname.push_str(&t);
+							self.eat_current();
+						},
+						Some(Token::RParen) => {
+							tname.push_str(")");
+							break;
+						},
+						Some(Token::Comma) => {
+							tname.push_str(",");
+							self.eat_current();
+						}
+						_ => return Err(format!("unexpected token {:?}", self.current_token))
+					}
+				}
+				Ok((tname, false))
 			},
 			_ => Err(format!("expected type specification in variable declaration, got {:?}",
 						 self.current_token))
@@ -349,6 +366,25 @@ impl<'a> Parser<'a> {
 		Expression::Call{name: fname.clone(), alias: fname, args: argv}
 	}
 
+	fn parse_mycall(&mut self, left: &Expression) -> Option<Expression> {
+		match self.current_token {
+			Some(Token::LParen) => {
+				let mut argv = vec![];
+				while let Some(Token::LParen) = self.current_token {
+					self.eat(Token::LParen);
+					argv.push(self.arglist());
+					self.eat(Token::RParen);
+				}
+				let e = Expression::MyCall{left: Box::new(left.clone()),
+										   alias: "".to_string(),
+										   args: argv};
+				Some(e)
+			},
+			_ => None
+		}
+		
+	}
+
 	fn define(&mut self) -> Statement {
 		self.eat(Token::Def);
 		self.eat(Token::Class);
@@ -385,26 +421,56 @@ impl<'a> Parser<'a> {
 			Token::LParen => {
 				self.eat(Token::LParen);
 				let expr = self.expr(0);
-				self.eat(Token::RParen);
-				expr
+				if let Some(Token::Comma) = self.current_token {
+					self.eat(Token::Comma);
+					self.tuple(expr)
+				} else {
+					self.eat(Token::RParen);
+					expr
+				}
 			},
 			Token::Fn => self.closure(),
 			Token::Ident(vname) => {
 				let var = {
 					let v = self.variable();
 					if let Some(Token::LParen) = self.current_token {
+						// TODO: Here
+						//self.parse_mycall(v);
 						self.parse_call(vname.clone())
 					} else { v }
 				};
-				self.parse_brackets(vname).unwrap_or(var)
+				self.parse_brackets(&vname)
+					.map_if_none(self.parse_dot(&var))
+					.unwrap_or(var)
 			},
 			_ => { panic!("found unexpected token {:?}", token) }
 		}
 	}
 
-	fn parse_brackets(&mut self, var: String) -> Option<Expression> {
+	fn parse_dot(&mut self, left: &Expression) -> Option<Expression> {
+		let mut result = None;
+		let mut expr = left.clone();
+		while let Some(Token::Dot) = self.current_token {
+			self.eat_current();
+			let right = self.ident()
+							.expect("Expected identifier after dot operator");
+			expr = Expression::DotOp(Box::new(DotOpExpression{left: expr.clone(), right: right}));
+			result = Some(expr.clone());
+		}
+		result
+	}
+
+	fn tuple(&mut self, expr: Expression) -> Expression {
+		let second = self.expr(0);
+		let tup = Tuple::new(expr, second);
+		self.eat(Token::RParen);
+		Expression::Value(TypedItem::from(tup))
+	}
+
+	// change brackops to follow dot op way
+	fn parse_brackets(&mut self, var: &str) -> Option<Expression> {
 		if let Some(Token::LBrace) = self.current_token {
-			let mut brackop = BrackOpExpression::new(var);
+			let mut brackop = BrackOpExpression::new(var.clone().to_string());
 			while let Some(Token::LBrace) = self.current_token {
 				self.eat_current();
 				let index = self.expr(0);
@@ -556,7 +622,10 @@ impl<'a> Parser<'a> {
 			}
 			expr = self.infix_expr(expr, next_precedence);
 		}
-		expr
+		
+		self.parse_mycall(&expr)
+			.map_if_none(self.parse_dot(&expr))
+			.unwrap_or(expr)
 	}
 
 	fn infix_expr(&mut self, left: Expression, precedence: u8) -> Expression {

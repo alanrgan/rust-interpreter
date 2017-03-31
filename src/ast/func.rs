@@ -77,7 +77,9 @@ impl Function {
 					let v = Expression::Variable(varname.clone());
 					let expr = Statement::Assign{var: v, value: ppair.1.clone(), in_func: true};
 					vnames.push(varname.clone());
-					assigns.push(Statement::new_let(varname.clone(), typename.clone(), Some(expr), true));
+					assigns.push(Statement::new_let(varname.clone(),
+													Some(typename.clone()),
+													Some(expr), true));
 				} else {
 					vnames.push("".into());
 					assigns.push(Statement::Empty);
@@ -136,7 +138,7 @@ impl Function {
 	}
 
 	pub fn check_valid_type(ty: &str) -> bool {
-		let re = Regex::new(r"^(Func<)(_{1}|(\(([A-Za-z]+, *)+([A-Za-z]+)\)|[A-Za-z]+), *([A-Za-z]+|_)>)").unwrap();
+		let re = Regex::new(r"^(Func<)(_{1}|(\(([A-Za-z]+, *)+([A-Za-z]+)\)|[A-Za-z]+)),( *([A-Za-z]+|_)>)").unwrap();
 		re.is_match(ty)
 	}
 
