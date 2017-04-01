@@ -330,10 +330,10 @@ impl Add for TypedItem {
 	type Output = TypedItem;
 	fn add(self, other: TypedItem) -> TypedItem {
 		match (self, other) {
-			(v@_, TypedItem::Primitive(Primitive::Str(s))) => {
+			(v, TypedItem::Primitive(Primitive::Str(s))) => {
 				Primitive::Str(format!("{}{}", v.to_string(), s)).into()
 			},
-			(TypedItem::Primitive(Primitive::Str(s)), v@_) => {
+			(TypedItem::Primitive(Primitive::Str(s)), v) => {
 				Primitive::Str(format!("{}{}", s, v.to_string())).into()
 			},
 			(TypedItem::Primitive(a), TypedItem::Primitive(b)) => (a+b).into(),

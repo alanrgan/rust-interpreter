@@ -355,34 +355,19 @@ impl<'a> Parser<'a> {
 		node
 	}
 
-	fn parse_call(&mut self, fname: String) -> Expression {
-		let mut argv = vec![];
+	fn parse_call(&mut self, left: &Expression) -> Option<Expression> {
+		let mut res = None;
+		let mut expr = left.clone();
 		while let Some(Token::LParen) = self.current_token {
 			self.eat(Token::LParen);
-			argv.push(self.arglist());
+			let args = self.arglist();
 			self.eat(Token::RParen);
-
+			expr = Expression::Call{left: Box::new(expr.clone()),
+									   alias: "".to_string(),
+									   args: args};
+			res = Some(expr.clone());
 		}
-		Expression::Call{name: fname.clone(), alias: fname, args: argv}
-	}
-
-	fn parse_mycall(&mut self, left: &Expression) -> Option<Expression> {
-		match self.current_token {
-			Some(Token::LParen) => {
-				let mut argv = vec![];
-				while let Some(Token::LParen) = self.current_token {
-					self.eat(Token::LParen);
-					argv.push(self.arglist());
-					self.eat(Token::RParen);
-				}
-				let e = Expression::MyCall{left: Box::new(left.clone()),
-										   alias: "".to_string(),
-										   args: argv};
-				Some(e)
-			},
-			_ => None
-		}
-		
+		res		
 	}
 
 	fn define(&mut self) -> Statement {
@@ -431,17 +416,15 @@ impl<'a> Parser<'a> {
 			},
 			Token::Fn => self.closure(),
 			Token::Ident(vname) => {
-				let var = {
-					let v = self.variable();
-					if let Some(Token::LParen) = self.current_token {
-						// TODO: Here
-						//self.parse_mycall(v);
-						self.parse_call(vname.clone())
-					} else { v }
-				};
-				self.parse_brackets(&vname)
-					.map_if_none(self.parse_dot(&var))
-					.unwrap_or(var)
+				let mut v = self.variable();
+				while let Some(b) = {
+					self.parse_call(&v)
+					.map_if_none(self.parse_brackets(&vname))
+					.map_if_none(self.parse_dot(&v))
+				} {
+					v = b
+				}
+				v
 			},
 			_ => { panic!("found unexpected token {:?}", token) }
 		}
@@ -470,7 +453,7 @@ impl<'a> Parser<'a> {
 	// change brackops to follow dot op way
 	fn parse_brackets(&mut self, var: &str) -> Option<Expression> {
 		if let Some(Token::LBrace) = self.current_token {
-			let mut brackop = BrackOpExpression::new(var.clone().to_string());
+			let mut brackop = BrackOpExpression::new(var.to_string());
 			while let Some(Token::LBrace) = self.current_token {
 				self.eat_current();
 				let index = self.expr(0);
@@ -623,7 +606,7 @@ impl<'a> Parser<'a> {
 			expr = self.infix_expr(expr, next_precedence);
 		}
 		
-		self.parse_mycall(&expr)
+		self.parse_call(&expr)
 			.map_if_none(self.parse_dot(&expr))
 			.unwrap_or(expr)
 	}

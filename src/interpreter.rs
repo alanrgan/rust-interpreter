@@ -41,7 +41,7 @@ impl<'a> Interpreter<'a> {
 					// or 'lift' the operators by passing in closures
 					BinOp::Plus => Ok(left + right),
 					BinOp::Minus => {
-						// TODO: do same thing here for 
+						// TODO: do same thing here for minus
 						match (left, right) {
 							(TypedItem::Primitive(l), TypedItem::Primitive(r)) => {
 								Ok((l-r).into())
@@ -99,131 +99,14 @@ impl<'a> Interpreter<'a> {
 					_ => Err(String::from("invalid unary operation"))
 				}
 			},
-			Expression::Call{ref name, ref alias, ref args} => {
-				let mut retval = Ok(TypedItem::empty());
-				let env = self.envs.current_scope().clone();
-				if let Some(func) = env.get_func(name) {
-					let mut cfunc = func.clone();
-					// check fn depth and compare with args length
-					// to prevent any execution if there is an error
-					if func.chain_depth() < args.len() as i32 {
-						return Err("Function call on non-function type".into());
+			Expression::Call{ref left, ref alias, ref args} => {
+				match **left {
+					Expression::Value(ref v) => self.func_call(v, alias.clone(), args),
+					ref v => {
+						let e = self.visit_expr(v)?;
+						self.func_call(&e, alias.clone(), args)
 					}
-					for arg in args {
-						let (assigns, vnames) = cfunc.match_args(alias.clone(), arg).unwrap();
-						for stmt in assigns {
-							let res = self.visit_statement(&stmt);
-							if res.is_err() { return res; }
-						}
-						self.envs.alias(vnames);
-						retval = self.visit_statement(&cfunc.conseq);
-						self.envs.pop();
-						if retval.is_ok() {
-							let rval = retval.clone().unwrap().unwrap_ret();
-							let rtype = rval.as_ref().unwrap().typename();
-							let func_rtype = cfunc.rtype();
-							if rtype != func_rtype {
-								retval = Err(format!("{}: Expected return type {}, got {}",
-													 alias, func_rtype, rtype));
-								break;
-							} 
-							match rval {
-								Ok(TypedItem::Closure(ref b)) =>  cfunc = *b.clone(),
-								Ok(TypedItem::FnPtr(ref fptr)) => {
-									if let Some(func) = fptr.clone().def {
-										cfunc = *func;
-									} else {
-										cfunc = self.envs.current_scope()
-														 .get_func(&fptr.fname)
-														 .expect("Unexpected FnPtr error")
-														 .clone();
-									}
-								}
-								_ => {}
-							}
-						}
-					}
-				} else if let Some(val) = env.get_var(name) {
-					if let Some(TypedItem::FnPtr(ref fptr)) = val.value {
-						let expr = Expression::Call{ name: fptr.fname.clone(),
-													 alias: name.clone(),
-													 args: args.clone()};
-						return self.visit_expr(&expr);
-					} else {
-						retval = Err(format!("Function {} is not defined in this scope", name));
-					}
-				} else {
-					retval = Err(format!("Function {} is not defined in this scope", name));
 				}
-
-				if retval.is_ok() {
-					retval.unwrap().unwrap_ret()
-				} else { retval }
-			},
-			Expression::MyCall{ref left, ref alias, ref args} => {
-				let left = self.visit_expr(left)?;
-				println!("{:?}",left);
-				Ok(TypedItem::empty())
-				/*
-				let mut retval = Ok(TypedItem::empty());
-				let env = self.envs.current_scope().clone();
-				if let Some(func) = env.get_func(name) {
-					let mut cfunc = func.clone();
-					// check fn depth and compare with args length
-					// to prevent any execution if there is an error
-					if func.chain_depth() < args.len() as i32 {
-						return Err("Function call on non-function type".into());
-					}
-					for arg in args {
-						let (assigns, vnames) = cfunc.match_args(alias.clone(), arg).unwrap();
-						for stmt in assigns {
-							let res = self.visit_statement(&stmt);
-							if res.is_err() { return res; }
-						}
-						self.envs.alias(vnames);
-						retval = self.visit_statement(&cfunc.conseq);
-						self.envs.pop();
-						if retval.is_ok() {
-							let rval = retval.clone().unwrap().unwrap_ret();
-							let rtype = rval.as_ref().unwrap().typename();
-							let func_rtype = cfunc.rtype();
-							if rtype != func_rtype {
-								retval = Err(format!("{}: Expected return type {}, got {}",
-													 alias, func_rtype, rtype));
-								break;
-							} 
-							match rval {
-								Ok(TypedItem::Closure(ref b)) =>  cfunc = *b.clone(),
-								Ok(TypedItem::FnPtr(ref fptr)) => {
-									if let Some(func) = fptr.clone().def {
-										cfunc = *func;
-									} else {
-										cfunc = self.envs.current_scope()
-														 .get_func(&fptr.fname)
-														 .expect("Unexpected FnPtr error")
-														 .clone();
-									}
-								}
-								_ => {}
-							}
-						}
-					}
-				} else if let Some(val) = env.get_var(name) {
-					if let Some(TypedItem::FnPtr(ref fptr)) = val.value {
-						let expr = Expression::Call{ name: fptr.fname.clone(),
-													 alias: name.clone(),
-													 args: args.clone()};
-						return self.visit_expr(&expr);
-					} else {
-						retval = Err(format!("Function {} is not defined in this scope", name));
-					}
-				} else {
-					retval = Err(format!("Function {} is not defined in this scope", name));
-				}
-
-				if retval.is_ok() {
-					retval.unwrap().unwrap_ret()
-				} else { retval }*/
 			},
 			Expression::Variable(ref vname) => {
 				let res = self.envs.current_scope()
@@ -239,14 +122,21 @@ impl<'a> Interpreter<'a> {
 			}
 			Expression::Value(ref prim) => {
 				let mut prim = prim.clone();
-				if let TypedItem::Tuple(ref mut tup) = prim {
-					if tup.body.len() == 0 {
-						for expr in &tup.exprs {
-							let e = self.visit_expr(expr)?;
-							tup.ty.push(e.typename().clone().into());
-							tup.body.push(e);
+				match prim.clone() {
+					TypedItem::Tuple(ref mut tup) => {
+						if tup.body.is_empty() {
+							for expr in &tup.exprs {
+								let e = self.visit_expr(expr)?;
+								tup.ty.push(e.typename().clone().into());
+								tup.body.push(e);
+							}
 						}
-					}
+						prim = TypedItem::Tuple(tup.clone());
+					},
+					TypedItem::Closure(ref f) => {
+						prim = self.def_func_ptr("@tmp".to_string(), &prim, f, false, false);
+					},
+					_ => {}
 				}
 				let _ = prim.unpack_mut::<List>().map(|list| self.expand_list(list));
 				Ok(prim)
@@ -254,7 +144,7 @@ impl<'a> Interpreter<'a> {
 			Expression::DotOp(ref expr) => {
 				match expr.left {
 					Expression::Value(ref v) => self.apply_dot(v, &expr.right),
-					ref v @_ => {
+					ref v => {
 						let e = self.visit_expr(v)?;
 						self.apply_dot(&e, &expr.right)
 					}
@@ -395,11 +285,9 @@ impl<'a> Interpreter<'a> {
 			},
 			// more type inference info here? unify types or such
 			Statement::Assign{ref var, ref value, ref in_func} => {
-				let val = self.visit_expr(value);
-				if val.is_err() { return val; }
-				let val = val.unwrap();
-				match (var, value) {
-					(&Expression::Variable(ref vname), _) => {
+				let val = self.visit_expr(value)?;
+				match *var {
+					Expression::Variable(ref vname) => {
 						let mut vitem = val.clone();
 						{
 							let tname = if let TypedItem::FnPtr(ref fptr) = val {
@@ -439,7 +327,7 @@ impl<'a> Interpreter<'a> {
 							Ok(vitem)
 						}
 					},
-					(&Expression::BrackOp(ref brack_expr), _) => {
+					Expression::BrackOp(ref brack_expr) => {
 						let indices = brack_expr.indices.iter()
 						    .map(|ind| self.visit_expr(ind)
 								.and_then(|val| val.unpack::<i32>()
@@ -567,6 +455,45 @@ impl<'a> Interpreter<'a> {
 											.map_err(|e| e.to_string()),
 			_ => Ok(TypedItem::empty())
 		}
+	}
+
+	fn func_call(&mut self, v: &TypedItem, alias: String, args: &Option<ArgList>) -> Result<TypedItem, String> {
+		let mut retval;
+		let env = self.envs.current_scope().clone();
+		if let TypedItem::FnPtr(ref fptr) = *v {
+			let name = &fptr.fname;
+			if let Some(func) = env.get_func(name) {
+				//let mut cfunc = func.clone();
+				let (assigns, vnames) = func.match_args(alias.clone(), args).unwrap();
+				for stmt in assigns {
+					let res = self.visit_statement(&stmt);
+					if res.is_err() { return res; }
+				}
+				self.envs.alias(vnames);
+				retval = self.visit_statement(&func.conseq);
+				self.envs.pop();
+				if retval.is_ok() {
+					let rval = retval.clone().unwrap().unwrap_ret();
+					let rtype = rval.as_ref().unwrap().typename();
+					let func_rtype = func.rtype();
+					if rtype != func_rtype {
+						retval = Err(format!("{}: Expected return type {}, got {}",
+											 alias, func_rtype, rtype));
+					}
+					if let Ok(TypedItem::FnPtr(ref fptr)) = rval {
+						self.extract_fnptr(fptr);
+					}
+				}
+			} else {
+				retval = Err(format!("Function {} is not defined in this scope", name));
+			}
+		} else {
+			retval = Err("Cannot perform call on non-lambda expression".into());
+		}
+
+		if retval.is_ok() {
+			retval.unwrap().unwrap_ret()
+		} else { retval }
 	}
 
 	fn visit_brackets(&mut self, expr: &BrackOpExpression) -> Result<TypedItem, String> {
