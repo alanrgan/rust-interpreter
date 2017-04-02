@@ -6,7 +6,8 @@ use super::func::{ArgList,Function};
 
 pub trait MapIfNone<T> {
     //type Item;
-    fn map_if_none(&self, other: Option<T>) -> Option<T>;
+    fn map_if_none<F>(&self, other: F) -> Option<T>
+    	where F: FnMut() -> Option<T>;
 }
 
 #[derive(Debug, Clone)]
@@ -23,9 +24,10 @@ pub enum Expression {
 }
 
 impl MapIfNone<Expression> for Option<Expression> {
-	fn map_if_none(&self, other: Option<Expression>) -> Option<Expression> {
+	fn map_if_none<F>(&self, mut other: F) -> Option<Expression> 
+		where F: FnMut() -> Option<Expression> {
 		if self.is_none() {
-			other
+			other()
 		} else {
 			self.clone()
 		}

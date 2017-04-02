@@ -17,6 +17,41 @@ pub struct Function {
 	pub ty: String,
 }
 
+pub struct FuncBuilder {
+	func: Function
+}
+
+impl FuncBuilder {
+	pub fn new() -> FuncBuilder {
+		FuncBuilder{func: Function::new(None, Statement::Empty, None)}
+	}
+
+	pub fn param(&mut self, name: &str, ty: &str) -> FuncBuilder {
+		let param = Parameter::Full{varname: name.to_string(), typename: ty.to_string()};
+		if let Some(ref mut v) = self.func.params {
+			v.push(param);
+		} else {
+			self.func.params = Some(vec![param]);
+		}
+		FuncBuilder{func: self.func.clone()}
+	}
+
+	pub fn conseq(&mut self, stmt: Statement) -> FuncBuilder {
+		self.func.conseq = stmt;
+		FuncBuilder{func: self.func.clone()}
+	}
+
+	pub fn retval(&mut self, ty: &str) -> FuncBuilder {
+		self.func.retval = Some(ty.to_string());
+		FuncBuilder{func: self.func.clone()}
+	}
+
+	pub fn done(mut self) -> Function {
+		self.func.ty = Function::construct_type(&self.func.params, &self.func.retval);
+		self.func
+	}
+}
+
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub enum Parameter {
 	Full { varname: String, typename: String },

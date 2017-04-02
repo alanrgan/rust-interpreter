@@ -5,7 +5,7 @@ use regex::Regex;
 pub struct Parser<'a> {
 	lexer: Lexer<'a>,
 	prev_token: Option<Token>,
-	current_token: Option<Token>
+	pub current_token: Option<Token>
 }
 
 impl<'a> Parser<'a> {
@@ -419,10 +419,10 @@ impl<'a> Parser<'a> {
 				let mut v = self.variable();
 				while let Some(b) = {
 					self.parse_call(&v)
-					.map_if_none(self.parse_brackets(&vname))
-					.map_if_none(self.parse_dot(&v))
+					.map_if_none(|| self.parse_dot(&v))
+					.map_if_none(|| self.parse_brackets(&vname))
 				} {
-					v = b
+					v = b;
 				}
 				v
 			},
@@ -547,10 +547,8 @@ impl<'a> Parser<'a> {
 		let mut rtype = None;
 		if let Some(Token::Colon) = self.current_token {
 			self.eat(Token::Colon);
-			rtype = self.ident();
-			if rtype.is_none() {
-				panic!("Expected return type in function declaration");
-			}
+			rtype = self.parse_type().ok();
+			self.eat_current();
 		}
 
 		let conseq = self.compound_statement();
@@ -592,23 +590,28 @@ impl<'a> Parser<'a> {
 		let mut expr = self.factor();
 		// continue parsing chained binary operators
 		while let Some(token) = self.current_token.clone() {
-			let next_precedence = {
-				if token.is_binop() {
-					token.get_precedence()
-				} else {
+			while let Some(b) = {
+				self.parse_call(&expr)
+					.map_if_none(|| self.parse_dot(&expr))
+			} {
+				expr = b;
+			}
+			if let Some(token) = self.current_token.clone() {
+				let next_precedence = {
+					if token.is_binop() {
+						token.get_precedence()
+					} else {
+						break;
+					}
+				};
+
+				if precedence >= next_precedence {
 					break;
 				}
-			};
-
-			if precedence >= next_precedence {
-				break;
+				expr = self.infix_expr(expr, next_precedence);
 			}
-			expr = self.infix_expr(expr, next_precedence);
 		}
-		
-		self.parse_call(&expr)
-			.map_if_none(self.parse_dot(&expr))
-			.unwrap_or(expr)
+		expr
 	}
 
 	fn infix_expr(&mut self, left: Expression, precedence: u8) -> Expression {

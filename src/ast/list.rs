@@ -29,7 +29,7 @@ impl List {
 impl From<Vec<i32>> for List {
 	fn from(some: Vec<i32>) -> List {
 		let values = some.into_iter()
-						.map(|v| ListElem::Value(Expression::from(Primitive::Integer(v))))
+						.map(|v| ListElem::Value(Primitive::Integer(v).into()))
 						.collect::<Vec<_>>();
 		let len = values.len();
 		List { values: values, length: len }

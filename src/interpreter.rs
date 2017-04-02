@@ -448,13 +448,36 @@ impl<'a> Interpreter<'a> {
 		print!("{}",t.to_string());
 	}
 
-	fn apply_dot(&self, v: &TypedItem, right: &str) -> Result<TypedItem, String> {
+	fn apply_dot(&mut self, v: &TypedItem, right: &str) -> Result<TypedItem, String> {
 		match *v {
-			TypedItem::Tuple(ref tup) => tup.dot_val(right)
-											.map(|x| x.clone())
-											.map_err(|e| e.to_string()),
+			TypedItem::Tuple(ref tup) => self.apply_dot_helper(Box::new(tup.clone()), right, true),
+			TypedItem::Primitive(Primitive::Str(ref s)) => {
+				self.apply_dot_helper(Box::new(s.clone()), right, false)
+			},
+			TypedItem::Primitive(Primitive::Array(ref l)) => {
+				self.apply_dot_helper(Box::new(l.clone()), right, false)
+			},
 			_ => Ok(TypedItem::empty())
 		}
+	}
+
+	fn apply_dot_helper(&mut self, ditem: Box<DotOp>, right: &str, as_ref: bool) -> Result<TypedItem, String> {
+		let res = {
+			if as_ref {
+    			ditem.dot_val_ref(right)
+				   	   .map(|x| x.clone())
+				       .map_err(|e| e.to_string())
+		    } else {
+			  	ditem.dot_val(right)
+	     	   	     .map(|x| x.clone())
+	     			 .map_err(|e| e.to_string())
+		  	}
+		};
+		if let Ok(TypedItem::Closure(ref b)) = res.clone() {
+    		Ok(self.def_func_ptr("@tmp".to_string(), &res.unwrap(), b, false, false))
+	    } else {
+	    	res
+    	}
 	}
 
 	fn func_call(&mut self, v: &TypedItem, alias: String, args: &Option<ArgList>) -> Result<TypedItem, String> {

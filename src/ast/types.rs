@@ -5,8 +5,9 @@ use std::collections::HashMap;
 
 use super::token::*;
 use super::list::*;
-use super::func::{Function, FnPtr};
+use super::func::{Function, FnPtr, FuncBuilder};
 use super::value::Value;
+use super::statement::*;
 use super::expression::Expression;
 
 pub type VisitResult = Result<TypedItem, String>;
@@ -27,10 +28,16 @@ pub struct Object {
 // '.' operator trait
 // ex: let tup = (0,4);
 //     tup.0; <- do operator
+// possibly take '&mut Env' as a parameter
 pub trait DotOp {
-	fn dot_val(&self, right: &str) -> Result<&TypedItem, &str>;
-	fn dot_val_mut(&mut self, right: &str) -> Result<&mut TypedItem, &str> {
-		Err("Undefined dot_val_mut")
+	fn dot_val(&self, right: &str) -> Result<TypedItem, &str> {
+		Err("Undefined dot_val")
+	}
+	fn dot_val_ref(&self, right: &str) -> Result<&TypedItem, &str> {
+		Err("Undefined dot_val_ref")
+	}
+	fn dot_val_mref(&mut self, right: &str) -> Result<&mut TypedItem, &str> {
+		Err("Undefined dot_val_mref")
 	}
 }
 
@@ -105,7 +112,7 @@ impl Tuple {
 }
 
 impl DotOp for Tuple {
-	fn dot_val(&self, right: &str) -> Result<&TypedItem, &str> {
+	fn dot_val_ref(&self, right: &str) -> Result<&TypedItem, &str> {
 		match right {
 			"zero" => self.body.get(0).ok_or("Invalid index zero for tuple"),
 			"one" => self.body.get(1).ok_or("Invalid index one for tuple"),
@@ -113,7 +120,7 @@ impl DotOp for Tuple {
 		}
 	}
 
-	fn dot_val_mut(&mut self, right: &str) -> Result<&mut TypedItem, &str> {
+	fn dot_val_mref(&mut self, right: &str) -> Result<&mut TypedItem, &str> {
 		match right {
 			"zero" => self.body.get_mut(0).ok_or("Invalid index zero for tuple"),
 			"one" => self.body.get_mut(1).ok_or("Invalid index one for tuple"),
@@ -122,11 +129,51 @@ impl DotOp for Tuple {
 	}
 }
 
-/*impl DotOp for String {
-	fn dot_val(&self, right: &str) -> Result<&TypedItem, &str> {
-
+// TODO: instead of creating a new Function object every time 'len' or w.e. is called
+// create a lookup table and see if a definition already exists.
+// if not, then return function
+impl DotOp for String {
+	fn dot_val(&self, right: &str) -> Result<TypedItem, &str> {
+		match right {
+			"len" => {
+				let l = Expression::from(Primitive::Integer((self.len() as i32)));
+				let conseq = Statement::Return{rval: Some(l)};
+				let func = FuncBuilder::new().conseq(conseq).retval("int").done();
+				Ok(TypedItem::from(func))
+			},
+			"chars" => {
+				let s = self.clone().chars()
+							.map(|x| {
+								let p = Primitive::Str(x.to_string());
+								ListElem::from(p)
+							}).collect::<Vec<_>>();
+				let l = Expression::from(Primitive::Array(List::from(s)));
+				let rstmt = Statement::Return{rval: Some(l)};
+				let cnseq = Statement::Compound{children: vec![rstmt]};
+				Ok(TypedItem::from(Function{ params: None, 
+											 conseq: cnseq,
+								 			 retval: Some("list".to_string()),
+								 			 ty: "Func<_,list>".to_string()
+				}))
+			},
+			_ => Err("Undefined op for str")
+		}
 	}
-}*/
+}
+
+impl DotOp for List {
+	fn dot_val(&self, right: &str) -> Result<TypedItem, &str> {
+		match right {
+			"len" => {
+				let l = Expression::from(Primitive::Integer(self.length as i32));
+				let conseq = Statement::Return{rval: Some(l)};
+				let func = FuncBuilder::new().conseq(conseq).retval("int").done();
+				Ok(TypedItem::from(func))
+			}
+			_ => Err("Undefined op for list")
+		}
+	}
+}
 
 #[derive(Debug, Clone)]
 pub enum Primitive {
