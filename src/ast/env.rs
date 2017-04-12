@@ -52,7 +52,8 @@ impl ScopeList {
 pub struct Env {
 	pub vars: VarMap,
 	pub types: HashMap<String, TypedItem>,
-	pub funcs: HashMap<String, Function>
+	pub funcs: HashMap<String, Function>,
+	pub in_call: bool
 }
 
 impl Env {
@@ -61,7 +62,9 @@ impl Env {
 	}
 
 	pub fn extend(&mut self) -> Env {
-		self.clone()
+		let mut e = self.clone();
+		e.in_call = false;
+		e
 	}
 
 	pub fn alias(&mut self, vnames: Vec<String>) -> Env {
@@ -151,7 +154,7 @@ impl Env {
 				e.vars.insert(name.clone(), Some(value.clone()));
 			}
 			// if function call, do not update any other scopes except the current
-			if passbyval { break; }
+			if passbyval || e.in_call { break; }
 			idx -= 1;
 		}
 	}

@@ -435,6 +435,7 @@ impl<'a> Interpreter<'a> {
 				}
 
 				let mut e = func.clone().env;
+				e.in_call = true;
 				e.fetch_and_set(self.envs.current_scope(), vnames);
 				self.envs.push(e.clone());
 
