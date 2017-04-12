@@ -87,16 +87,17 @@ impl<'a> Interpreter<'a> {
 			},
 			Expression::BrackOp(ref brackop) => self.visit_brackets(brackop),
 			Expression::UnaryOp(ref op_expr) => {
-				let val = self.visit_expr(&op_expr.val);
+				let val = self.visit_expr(&op_expr.val)?;
 				match (&op_expr.op, val.clone()) {
-					(&UnaryOp::Plus, Ok(TypedItem::Primitive(Primitive::Integer(_)))) => val,
-					(&UnaryOp::Minus, Ok(TypedItem::Primitive(Primitive::Integer(num)))) => {
+					(&UnaryOp::Plus, TypedItem::Primitive(Primitive::Integer(_))) => Ok(val),
+					(&UnaryOp::Minus, TypedItem::Primitive(Primitive::Integer(num))) => {
 						Ok(Primitive::Integer(-num).into())
 					},
-					(&UnaryOp::Not, Ok(TypedItem::Primitive(Primitive::Bool(bool_val)))) => {
+					(&UnaryOp::Not, TypedItem::Primitive(Primitive::Bool(bool_val))) => {
 						Ok(Primitive::Bool(!bool_val).into())
 					},
-					_ => Err(String::from("invalid unary operation"))
+					_ => Err(format!("invalid unary op: {:?} {:?}", op_expr.op, val))
+					//Err(String::from("invalid unary operation"))
 				}
 			},
 			Expression::Call{ref left, ref alias, ref args} => {
@@ -134,7 +135,10 @@ impl<'a> Interpreter<'a> {
 						prim = TypedItem::Tuple(tup.clone());
 					},
 					TypedItem::Closure(ref f) => {
-						prim = self.def_func_ptr("@tmp".to_string(), &prim, f, false, false);
+						//println!("closure assign here...?");
+						let mut func = *f.clone();
+						func.env = self.envs.current_scope().clone();
+						prim = self.def_func_ptr("@tmp".to_string(), &prim, func, false, false);
 					},
 					_ => {}
 				}
@@ -180,8 +184,9 @@ impl<'a> Interpreter<'a> {
 	#[allow(single_match)]
 	fn visit_statement(&mut self, statement: &Statement) -> Result<TypedItem, String> {
 		match *statement {
-			Statement::Compound{ref children} => {
-				self.envs.extend();
+			Statement::Compound{ref children, ref env} => {
+				let scope = self.envs.current_scope().extend();
+				self.envs.extend_with(env.clone().unwrap_or(scope));
 				for child in children {
 					//println!("{:?}\n", child);
 					match *child {
@@ -212,8 +217,7 @@ impl<'a> Interpreter<'a> {
 						_ => {}
 					}
 
-					let result = self.visit(Box::new(child.clone()));
-					if result.is_err() { return result }
+					let result = Ok(self.visit(Box::new(child.clone()))?);
 
 					// propagate any returns or breaks upward
 					match result {
@@ -275,6 +279,7 @@ impl<'a> Interpreter<'a> {
 						match self.visit_statement(&fs.conseq) {
 							Ok(TypedItem::Primitive(Primitive::LTerm(TermToken::Break))) => break,
 							res@Ok(TypedItem::RetVal(_)) => return res,
+							e@Err(_) => return e,
 							_ => {}
 						};
 					}
@@ -284,68 +289,7 @@ impl<'a> Interpreter<'a> {
 				}
 			},
 			// more type inference info here? unify types or such
-			Statement::Assign{ref var, ref value, ref in_func} => {
-				let val = self.visit_expr(value)?;
-				match *var {
-					Expression::Variable(ref vname) => {
-						let mut vitem = val.clone();
-						{
-							let tname = if let TypedItem::FnPtr(ref fptr) = val {
-								self.extract_fnptr(fptr);
-								let ty = self.envs.current_scope()
-												  .get_func(&fptr.fname)
-												  .unwrap().clone().ty;
-								vitem = TypedItem::FnPtr(FnPtr::new(
-														 fptr.fname.clone(),
-														 ty.clone(),
-														 false,
-														 fptr.def.clone()
-														 		 .map(|x| *x.clone())));
-						    	ty
-						    } else {
-						    	val.typename()
-						    };
-							let mut elem = self.envs.current_scope().get_mut(vname)
-									   .expect(&format!("Variable '{}' not declared", vname));
-						
-						    let expected_type = elem.clone().unwrap().ty_name;
-						    if expected_type.is_empty() {
-						    	let inner_val = elem.as_mut().unwrap();
-						    	inner_val.ty_name = tname;
-						    } else if expected_type != tname {
-						    	return Err(format!("mismatched types: expected {}, found {}",
-						    			expected_type, tname));
-						    }
-						}
-
-						let value = Value::new(vname.clone(), val.typename(), Some(vitem.clone()));
-
-						if let TypedItem::Closure(ref b) = val {
-					    	Ok(self.def_func_ptr(vname.clone(), &val, b, *in_func, false))
-					    } else {
-					    	Env::set(&mut self.envs, vname.clone(), value, *in_func);
-							Ok(vitem)
-						}
-					},
-					Expression::BrackOp(ref brack_expr) => {
-						let indices = brack_expr.indices.iter()
-						    .map(|ind| self.visit_expr(ind)
-								.and_then(|val| val.unpack::<i32>()
-								.map_err(|_| "invalid index: expected integer".to_string()))
-								.map(|val| val as usize)
-								.unwrap()
-							).collect::<Vec<_>>();
-
-						let stored_list = try!(self.fetch_var_mut(&brack_expr.var));
-						let list_elem = List::get_mut_at(stored_list, &indices)
-											.expect(&format!("invalid index {}", *indices.last().unwrap()));
-						*list_elem = ListElem::from(val.clone());
-						Ok(val)
-					},
-					
-					_ => unreachable!()
-				}
-			},
+			ref a @Statement::Assign{..} => self.visit_assign(a),
 			// perform basic type inference here
 			Statement::Let(ref lst) => {
 				let ty = lst.ty.clone();
@@ -383,15 +327,13 @@ impl<'a> Interpreter<'a> {
 			Statement::FuncDef{ref name, ref func} => {
 				let fun = *func.clone();
 				let val = TypedItem::Closure(func.clone());
-				self.def_func_ptr(name.clone(), &val, func, false, true);
+				self.def_func_ptr(name.clone(), &val, fun, false, true);
 				Ok(TypedItem::empty())
 			},
 			Statement::FuncCall(ref call) => {
 				self.visit_expr(call)
 			},
 			Statement::Return{ref rval} => {
-				//println!("Visiting return... {:?}\n", self.envs.current_scope().vars);
-				//println!("rval is {:?}", rval);
 				rval.as_ref()
 					.map_or(Ok(TypedItem::empty()),
 							|expr| {
@@ -433,11 +375,11 @@ impl<'a> Interpreter<'a> {
 		}
 	}
 
-	fn def_func_ptr(&mut self, vname: String, val: &TypedItem, b: &Box<Function>, in_func: bool, is_def: bool) -> TypedItem {
+	fn def_func_ptr(&mut self, vname: String, val: &TypedItem, b: Function, in_func: bool, is_def: bool) -> TypedItem {
 		let mut id = Uuid::new_v4().simple().to_string();
 		id = format!("{}{}","@",id);
-		self.envs.current_scope().def_func(id.clone(), *b.clone());
-		let ptr = TypedItem::FnPtr(FnPtr::new(id, b.clone().ty, is_def, None));
+		self.envs.current_scope().def_func(id.clone(), b.clone());
+		let ptr = TypedItem::FnPtr(FnPtr::new(id, b.ty, is_def, None));
 		let v = Value::new(vname.clone(), val.typename(), Some(ptr.clone()));
     	Env::set(&mut self.envs, vname.clone(), v, in_func);
     	ptr
@@ -474,49 +416,120 @@ impl<'a> Interpreter<'a> {
 		  	}
 		};
 		if let Ok(TypedItem::Closure(ref b)) = res.clone() {
-    		Ok(self.def_func_ptr("@tmp".to_string(), &res.unwrap(), b, false, false))
+			let func = *b.clone();
+    		Ok(self.def_func_ptr("@tmp".to_string(), &res.unwrap(), func, false, false))
 	    } else {
 	    	res
     	}
 	}
 
 	fn func_call(&mut self, v: &TypedItem, alias: String, args: &Option<ArgList>) -> Result<TypedItem, String> {
-		let mut retval;
-		let env = self.envs.current_scope().clone();
+		//let mut retval;
+		let mut env = self.envs.current_scope().clone();
 		if let TypedItem::FnPtr(ref fptr) = *v {
 			let name = &fptr.fname;
-			if let Some(func) = env.get_func(name) {
-				//let mut cfunc = func.clone();
-				let (assigns, vnames) = func.match_args(alias.clone(), args).unwrap();
+			if let Some(func) = env.get_func_mut(name) {
+				let (assigns, vnames) = func.match_args(alias.clone(), args).unwrap(); 
 				for stmt in assigns {
-					let res = self.visit_statement(&stmt);
-					if res.is_err() { return res; }
+					self.visit_statement(&stmt)?;
 				}
-				self.envs.alias(vnames);
-				retval = self.visit_statement(&func.conseq);
+
+				let mut e = func.clone().env;
+				e.fetch_and_set(self.envs.current_scope(), vnames);
+				self.envs.push(e.clone());
+
+				if let Statement::Compound{ref mut children, ref mut env} = func.conseq {
+					*env = Some(e);
+				}
+				let retval = self.visit_statement(&func.conseq)?;
+				//println!("{:?}", retval);
 				self.envs.pop();
-				if retval.is_ok() {
-					let rval = retval.clone().unwrap().unwrap_ret();
-					let rtype = rval.as_ref().unwrap().typename();
-					let func_rtype = func.rtype();
-					if rtype != func_rtype {
-						retval = Err(format!("{}: Expected return type {}, got {}",
-											 alias, func_rtype, rtype));
-					}
-					if let Ok(TypedItem::FnPtr(ref fptr)) = rval {
-						self.extract_fnptr(fptr);
-					}
+				let rval = retval.clone().unwrap_ret();
+				let rtype = rval.as_ref().unwrap().typename();
+				let func_rtype = func.rtype();
+				if rtype != func_rtype {
+					return Err(format!("{}: Expected return type {}, got {}",
+										 alias, func_rtype, rtype));
 				}
+				if let Ok(TypedItem::FnPtr(ref fptr)) = rval {
+					self.extract_fnptr(fptr);
+				}
+				retval.unwrap_ret()
 			} else {
-				retval = Err(format!("Function {} is not defined in this scope", name));
+				Err(format!("Function {} is not defined in this scope", name))
 			}
 		} else {
-			retval = Err("Cannot perform call on non-lambda expression".into());
+			Err(format!("cannot perform call on non lambda expr {:?}", *v))
 		}
+	}
 
-		if retval.is_ok() {
-			retval.unwrap().unwrap_ret()
-		} else { retval }
+	fn visit_assign(&mut self, s: &Statement) -> Result<TypedItem, String> {
+		if let Statement::Assign{ref var, ref value, ref in_func} = *s {
+			let val = self.visit_expr(value)?;
+				match *var {
+					Expression::Variable(ref vname) => {
+						let mut vitem = val.clone();
+						{
+							let tname = if let TypedItem::FnPtr(ref fptr) = val {
+								self.extract_fnptr(fptr);
+								let ty = self.envs.current_scope()
+												  .get_func(&fptr.fname)
+												  .unwrap().clone().ty;
+								vitem = TypedItem::FnPtr(FnPtr::new(
+														 fptr.fname.clone(),
+														 ty.clone(),
+														 false,
+														 fptr.def.clone()
+														 		 .map(|x| *x.clone())));
+						    	ty
+						    } else {
+						    	val.typename()
+						    };
+							let mut elem = self.envs.current_scope().get_mut(vname)
+									   .expect(&format!("Variable '{}' not declared", vname));
+						
+						    let expected_type = elem.clone().unwrap().ty_name;
+						    if expected_type.is_empty() {
+						    	let inner_val = elem.as_mut().unwrap();
+						    	inner_val.ty_name = tname;
+						    } else if expected_type != tname {
+						    	return Err(format!("mismatched types: expected {}, found {}",
+						    			expected_type, tname));
+						    }
+						}
+
+						let value = Value::new(vname.clone(), val.typename(), Some(vitem.clone()));
+
+						if let TypedItem::Closure(ref b) = val {
+							//println!("assign:closure here");
+							let func = *b.clone();
+					    	Ok(self.def_func_ptr(vname.clone(), &val, func, *in_func, false))
+					    } else {
+					    	Env::set(&mut self.envs, vname.clone(), value, *in_func);
+							Ok(vitem)
+						}
+					},
+					Expression::BrackOp(ref brack_expr) => {
+						let indices = brack_expr.indices.iter()
+						    .map(|ind| self.visit_expr(ind)
+								.and_then(|val| val.unpack::<i32>()
+								.map_err(|_| "invalid index: expected integer".to_string()))
+								.map(|val| val as usize)
+								.unwrap()
+							).collect::<Vec<_>>();
+
+						let stored_list = try!(self.fetch_var_mut(&brack_expr.var));
+						let list_elem = List::get_mut_at(stored_list, &indices)
+											.expect(&format!("invalid index {}", *indices.last().unwrap()));
+						*list_elem = ListElem::from(val.clone());
+						Ok(val)
+					},
+					
+					_ => unreachable!()
+				}
+		} else {
+			unreachable!()
+		}
 	}
 
 	fn visit_brackets(&mut self, expr: &BrackOpExpression) -> Result<TypedItem, String> {

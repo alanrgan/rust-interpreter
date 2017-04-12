@@ -1,5 +1,6 @@
 use super::statement::Statement;
 use super::expression::Expression;
+use super::env::Env;
 use std::collections::HashSet;
 use regex::Regex;
 
@@ -7,8 +8,7 @@ type NameArgPair = (Vec<Statement>, Vec<String>);
 
 #[derive(Debug, Clone)]
 pub struct Function {
-	// TODO: MAYBE, scopes are specific to the call
-	// pub env: Env,
+	pub env: Env,
 	pub params: Option<Vec<Parameter>>,
 	// Compound statement
 	pub conseq: Statement,
@@ -88,7 +88,11 @@ impl FnPtr {
 impl Function {
 	pub fn new(params: Option<Vec<Parameter>>, conseq: Statement, rtype: Option<String>) -> Function {
 		let ftype = Function::construct_type(&params, &rtype);
-		Function { params: params, conseq: conseq, retval: rtype, ty: ftype }
+		Function { env: Env::new(), 
+				   params: params,
+				   conseq: conseq,
+				   retval: rtype,
+				   ty: ftype }
 	}
 
 	pub fn rtype(&self) -> String {

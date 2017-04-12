@@ -2,13 +2,14 @@ use super::expression::*;
 use super::token::*;
 use super::types::*;
 use super::func::*;
+use super::env::Env;
 use super::ast::Visitable;
 
 #[derive(Debug, Clone)]
 pub enum Statement {
 	For(Box<ForStatement>),
 	While { pred: Expression, conseq: Box<Statement> },
-	Compound { children: Vec<Statement> },
+	Compound { children: Vec<Statement>, env: Option<Env>},
 	Assign { var: Expression, value: Expression, in_func: bool },
 	If(Box<IfStatement>),
 	Print(Expression),

@@ -5,7 +5,7 @@ use super::types::TypedItem;
 
 type VarMap = HashMap<String, Option<Value>>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ScopeList {
 	pub envs: Vec<Env>,
 	aliases: Vec<VarMap>
@@ -13,7 +13,7 @@ pub struct ScopeList {
 
 impl ScopeList {
 	pub fn new() -> ScopeList {
-		ScopeList { envs: vec![ Env::new() ], aliases: vec![] }
+		ScopeList { envs: vec![ Env::new() ], ..Default::default() }
 	}
 
 	pub fn current_scope(&mut self) -> &mut Env {
@@ -25,8 +25,16 @@ impl ScopeList {
 		self.envs.push(scope);
 	}
 
-	pub fn pop(&mut self) {
-		self.envs.pop();
+	pub fn extend_with(&mut self, env: Env) {
+		self.envs.push(env);
+	}
+
+	pub fn push(&mut self, env: Env) {
+		self.envs.push(env);
+	}
+
+	pub fn pop(&mut self) -> Option<Env> {
+		self.envs.pop()
 	}
 
 	// vnames is a vector of names to import from the previous scope (i.e. the argnames)
@@ -40,7 +48,7 @@ impl ScopeList {
 	}
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Env {
 	pub vars: VarMap,
 	pub types: HashMap<String, TypedItem>,
@@ -49,11 +57,7 @@ pub struct Env {
 
 impl Env {
 	pub fn new() -> Env {
-		Env {
-			vars: HashMap::new(),
-			types: HashMap::new(),
-			funcs: HashMap::new()
-		}
+		Env { ..Default::default() }
 	}
 
 	pub fn extend(&mut self) -> Env {
@@ -65,7 +69,7 @@ impl Env {
 		e.vars = HashMap::new();
 
 		// copy all function pointers over
-		for (key, val) in &self.vars{
+		for (key, val) in &self.vars {
 			if let Some(TypedItem::FnPtr(ref fptr)) = val.as_ref().unwrap().value {
 				if fptr.is_def {
 					e.vars.insert(key.clone(), val.clone());
@@ -81,6 +85,51 @@ impl Env {
 		}
 		e
 	}
+
+	pub fn fetch_and_set(&mut self, other: &Env, vnames: Vec<String>) {
+		for (key, val) in &other.vars {
+			if let Some(TypedItem::FnPtr(ref fptr)) = val.as_ref().unwrap().value {
+				if fptr.is_def {
+					self.vars.insert(key.clone(), val.clone());
+				}
+			}
+		}
+
+		for name in vnames {
+			let value = other.vars.get(&name);
+			if value.is_some() {
+				self.vars.insert(name, value.unwrap().clone());
+			}
+		}
+
+		self.funcs = other.funcs.clone();
+	}
+
+	// get all vars and fn ptrs
+	pub fn fetch_vars(&mut self, vnames: Vec<String>) -> Vec<(String, Option<Value>)> {
+		let mut v = vec![];
+		for (key, val) in &self.vars {
+			if let Some(TypedItem::FnPtr(ref fptr)) = val.as_ref().unwrap().value {
+				if fptr.is_def {
+					v.push((key.clone(), val.clone()));
+				}
+			}
+		}
+
+		for name in vnames {
+			let value = self.vars.get(&name);
+			if value.is_some() {
+				v.push((name, value.unwrap().clone()));
+			}
+		}
+		v
+	}
+
+	pub fn add_all(&mut self, pairs: Vec<(String, Option<Value>)>) {
+		for tup in pairs {
+			self.vars.insert(tup.0, tup.1);
+		}
+ 	}
 
 	/*
 	*	passbyval should be set to true in the case when you're setting a function
@@ -133,6 +182,10 @@ impl Env {
 
 	pub fn get_func(&self, name: &str) -> Option<&Function> {
 		self.funcs.get(name)
+	}
+
+	pub fn get_func_mut(&mut self, name: &str) -> Option<&mut Function> {
+		self.funcs.get_mut(name)
 	}
 
 	pub fn get_var(&self, name: &str) -> Option<&Value> {

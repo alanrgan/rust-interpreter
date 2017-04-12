@@ -136,7 +136,7 @@ impl DotOp for String {
 	fn dot_val(&self, right: &str) -> Result<TypedItem, &str> {
 		match right {
 			"len" => {
-				let l = Expression::from(Primitive::Integer((self.len() as i32)));
+				let l = Expression::from(Primitive::Integer(self.len() as i32));
 				let conseq = Statement::Return{rval: Some(l)};
 				let func = FuncBuilder::new().conseq(conseq).retval("int").done();
 				Ok(TypedItem::from(func))
@@ -148,13 +148,9 @@ impl DotOp for String {
 								ListElem::from(p)
 							}).collect::<Vec<_>>();
 				let l = Expression::from(Primitive::Array(List::from(s)));
-				let rstmt = Statement::Return{rval: Some(l)};
-				let cnseq = Statement::Compound{children: vec![rstmt]};
-				Ok(TypedItem::from(Function{ params: None, 
-											 conseq: cnseq,
-								 			 retval: Some("list".to_string()),
-								 			 ty: "Func<_,list>".to_string()
-				}))
+				let conseq = Statement::Return{rval: Some(l)};
+				let func = FuncBuilder::new().conseq(conseq).retval("list").done();
+				Ok(TypedItem::from(func))
 			},
 			_ => Err("Undefined op for str")
 		}
@@ -169,7 +165,7 @@ impl DotOp for List {
 				let conseq = Statement::Return{rval: Some(l)};
 				let func = FuncBuilder::new().conseq(conseq).retval("int").done();
 				Ok(TypedItem::from(func))
-			}
+			},
 			_ => Err("Undefined op for list")
 		}
 	}

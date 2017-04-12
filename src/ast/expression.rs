@@ -23,9 +23,10 @@ pub enum Expression {
 	UnaryOp(Box<UnaryOpExpression>)
 }
 
-impl MapIfNone<Expression> for Option<Expression> {
-	fn map_if_none<F>(&self, mut other: F) -> Option<Expression> 
-		where F: FnMut() -> Option<Expression> {
+impl<T> MapIfNone<T> for Option<T> 
+	where T: Clone {
+	fn map_if_none<F>(&self, mut other: F) -> Option<T> 
+		where F: FnMut() -> Option<T> {
 		if self.is_none() {
 			other()
 		} else {

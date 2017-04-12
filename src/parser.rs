@@ -121,7 +121,7 @@ impl<'a> Parser<'a> {
 			if let Statement::FuncDef{..} = stmt { nodes.insert(0, stmt); }
 			else { nodes.push(stmt) }
 		}
-		Statement::Compound{children: nodes}
+		Statement::Compound{children: nodes, env: None}
 	}
 
 	fn compound_statement(&mut self) -> Statement {
