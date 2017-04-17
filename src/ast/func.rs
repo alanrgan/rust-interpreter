@@ -55,6 +55,7 @@ impl FuncBuilder {
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub enum Parameter {
 	Full { varname: String, typename: String },
+	Half(String),
 	Partial
 }
 
@@ -98,6 +99,24 @@ impl Function {
 	pub fn rtype(&self) -> String {
 		if self.retval.is_some() { self.retval.clone().unwrap() }
 		else { "_".to_string() }
+	}
+
+	pub fn set_type(&mut self, ftype: &str) {
+		let (params, rval) = Function::parse_type(ftype);
+		if params.is_some() && self.params.is_some() {
+			let myparams = self.params.as_mut().unwrap().iter_mut();
+			let ps = params.unwrap().into_iter();
+			for (param, ty) in myparams.zip(ps) {
+				let name = if let Parameter::Half(vname) = param.clone() {
+					vname
+				} else { "".to_string() };
+				*param = Parameter::Full{varname: name, typename: ty}
+			}
+		} else if params.is_none() {
+			self.params = None;
+		}
+		self.retval = rval;
+		self.ty = Function::construct_type(&self.params, &self.retval);
 	}
 
 	/*
@@ -160,6 +179,42 @@ impl Function {
 		ftype
 	}
 
+	pub fn parse_type(ty: &str) -> (Option<Vec<String>>, Option<String>) {
+		let pty = parse_fn_param(ty);
+		let rval = parse_fn_rval(ty);
+		let mut param_tys = None;
+		let mut ret_ty = None;
+		if pty != "_" {
+			if pty.starts_with('(') {
+				let mut v = vec![];
+				let mut s = "".to_string();
+				let mut ltct = 0;
+				for c in pty.trim_matches(|x| x == '(' || x == ')').chars() {
+					match c {
+						',' if ltct == 0 => {
+							v.push(s.clone());
+							s = "".to_string();
+							continue
+						},
+						'<' => ltct += 1,
+						'>' => ltct -= 1,
+						_ => {}
+					}
+					s.push_str(&c.to_string());
+				}
+				v.push(s);
+				param_tys = Some(v);
+			} else {
+				param_tys = Some(vec![pty]);
+			}
+		}
+		if rval != "_" {
+			ret_ty = Some(rval)
+		}
+
+		(param_tys, ret_ty)
+	}
+
 	// returns the number of successive return values that are functions
 	pub fn chain_depth(&self) -> i32 {
 		match self.retval {
@@ -188,9 +243,12 @@ impl Function {
 			param_list.iter().fold((false, HashSet::new()), |acc, x| {
 				let mut hset = acc.1.clone();
 				let mut res = acc.0;
-				if let Parameter::Full{ ref varname, ..} = *x {
-					res = res || acc.1.contains(varname);
-					hset.insert(varname);
+				match *x {
+					Parameter::Full{ ref varname, ..} | Parameter::Half(ref varname) => {
+						res = res || acc.1.contains(varname);
+						hset.insert(varname);
+					},
+					_ => {}
 				}
 				(res, hset)
 			}).0
@@ -218,6 +276,29 @@ impl Index {
 			  parenct: parenct,
 			  sat: sat}
 	}
+}
+
+pub fn parse_fn_param(s: &str) -> String {
+	let start = s.find('<').expect("should not fail");
+	let ind = s.chars().fold(Index{..Default::default()},
+		|acc, c| {
+			if acc.sat {
+				acc
+			} else if acc.ltct == 1 && c == ',' && acc.parenct == 0 {
+				Index::new(acc.ind+1, acc.ltct, 0, true)
+			} else if c == '<' {
+				Index::new(acc.ind+1, acc.ltct+1, acc.parenct, false)
+			} else if c == '>' {
+				Index::new(acc.ind+1, acc.ltct-1, acc.parenct, false)
+			} else if c == '(' {
+				Index::new(acc.ind+1, acc.ltct, acc.parenct+1, false)
+			} else if c == ')' {
+				Index::new(acc.ind+1, acc.ltct, acc.parenct-1, false)
+			} else {
+				Index::new(acc.ind+1, acc.ltct, acc.parenct, false)
+			}
+		}).ind;
+	s[(start+1 as usize)..(ind as usize - 1)].into()
 }
 
 pub fn parse_fn_rval(s: &str) -> String {

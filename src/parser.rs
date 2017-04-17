@@ -201,12 +201,21 @@ impl<'a> Parser<'a> {
 		}
 	}
 
+	fn half_param(&mut self) -> Parameter {
+		let id = if let Some(Token::Underscore) = self.current_token {
+			self.eat_current();
+			"_".to_string()
+		} else {
+			self.ident().expect("expected identifier in parameter list")
+		};
+		Parameter::Half(id)
+	}
+
 	fn param(&mut self) -> Parameter {
 		let id = self.ident().expect("expected identifier in parameter list");
 		self.eat(Token::Colon);
 		let ty = self.parse_type();
 		self.eat_current();
-		//println!("ty is {}", ty);
 		Parameter::Full{ varname: id, typename: ty.unwrap() }
 	}
 
@@ -243,7 +252,7 @@ impl<'a> Parser<'a> {
 		 				 }))
 	}
 
-	fn parse_type(&mut self, ) -> Result<String, String> {
+	fn parse_type(&mut self) -> Result<String, String> {
 		let tyname = match self.current_token {
 			Some(Token::Ident(ref tname)) => {
 				if tname == "Func" {
@@ -413,6 +422,19 @@ impl<'a> Parser<'a> {
 					self.eat(Token::RParen);
 					expr
 				}
+			},
+			Token::Backslash => {
+				self.eat(Token::Backslash);
+				let mut params = vec![self.half_param()];
+				loop {
+					if let Some(Token::RightArrow) = self.current_token { break; }
+					else {
+						params.push(self.half_param());
+					}
+				}
+				self.eat(Token::RightArrow);
+				let body = self.statement();
+				Expression::from(Function::new(Some(params), body, None))
 			},
 			Token::Fn => self.closure(),
 			Token::Ident(vname) => {

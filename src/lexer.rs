@@ -27,7 +27,7 @@ impl<'a> Lexer<'a> {
 				continue;
 			} else {
 				match ch {
-					'a' ... 'z' | 'A' ... 'Z' | '_' => {
+					'a' ... 'z' | 'A' ... 'Z' => {
 						let var: String = self.consume_while(|c| c.is_alphanumeric() || c == '_')
 								.into_iter()
 								.collect();
@@ -52,7 +52,20 @@ impl<'a> Lexer<'a> {
 					},
 					'-' => {
 						self.iter.next();
-						return self.peek_choose(Token::Minus, Token::MEquals, |c| c == '=');
+						if let Some(&c) = self.iter.peek() {
+							match c {
+								'=' => {
+									self.iter.next();
+									return Some(Token::MEquals);
+								},
+								'>' => {
+									self.iter.next();
+									return Some(Token::RightArrow);
+								}
+								_ => {}
+							}
+						}
+						return Some(Token::Minus);
 					},
 					'*' => {
 						self.iter.next();
@@ -107,6 +120,10 @@ impl<'a> Lexer<'a> {
 					':' => {
 						self.iter.next();
 						return self.peek_choose(Token::Colon, Token::DColon, |c| c == ':');
+					},
+					'_' => {
+						self.iter.next();
+						return Some(Token::Underscore);
 					},
 					'=' => {
 						self.iter.next();

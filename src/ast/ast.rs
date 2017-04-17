@@ -1,11 +1,10 @@
 use interpreter::NodeType;
 use std::fmt::{Debug, Formatter, Error};
-use std::panic::RefUnwindSafe;
 
 use super::statement::*;
 use super::expression::*;
 
-pub trait Visitable: RefUnwindSafe {
+pub trait Visitable {
 	fn node_type(&self) -> NodeType;
 	fn as_statement(self: Box<Self>) -> Option<Statement>;
 	fn as_expression(self: Box<Self>) -> Option<Expression>;

@@ -50,6 +50,8 @@ pub enum Token {
 	While,
 	For,
 	Fn,
+	RightArrow,
+	Underscore,
 	In,
 	Continue,
 	Return,

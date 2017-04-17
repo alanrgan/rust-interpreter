@@ -360,9 +360,9 @@ impl<'a> Interpreter<'a> {
 				Ok(TypedItem::empty())
 			}
 			Statement::Print(ref expr) => {
-				let res = self.visit_expr(expr);
-				let _ = res.clone().map(|val| self.print_item(val));
-				res
+				let res = self.visit_expr(expr)?;
+				let _ = self.print_item(res);
+				Ok(TypedItem::empty())
 			},
 			Statement::Expr(ref expr) => self.visit_expr(expr),
 			_ => Ok(TypedItem::empty())
@@ -429,6 +429,11 @@ impl<'a> Interpreter<'a> {
 		if let TypedItem::FnPtr(ref fptr) = *v {
 			let name = &fptr.fname;
 			if let Some(func) = env.get_func_mut(name) {
+				// TODO: to fix parameter name conflicts (issue #10)
+				// have two-phase assignments. Keep temporary variables
+				// that represent parameter names: @param_{1..N}
+				// assign the arguments to those
+				// then fetch_and_set those names in the func scope
 				let (assigns, vnames) = func.match_args(alias.clone(), args).unwrap(); 
 				for stmt in assigns {
 					self.visit_statement(&stmt)?;
@@ -469,9 +474,10 @@ impl<'a> Interpreter<'a> {
 			let val = self.visit_expr(value)?;
 				match *var {
 					Expression::Variable(ref vname) => {
+						//println!("val is {:?}", val);
 						let mut vitem = val.clone();
 						{
-							let tname = if let TypedItem::FnPtr(ref fptr) = val {
+							let mut tname = if let TypedItem::FnPtr(ref fptr) = val {
 								self.extract_fnptr(fptr);
 								let ty = self.envs.current_scope()
 												  .get_func(&fptr.fname)
@@ -486,14 +492,33 @@ impl<'a> Interpreter<'a> {
 						    } else {
 						    	val.typename()
 						    };
+
+						    let expected_type = self.envs.current_scope()
+						    							 .get_var(vname)
+						    							 .expect(&format!("Variable '{}' not declared", vname))
+						    							 .clone().ty_name;
+
+							if let TypedItem::FnPtr(ref fptr) = val {
+								if tname.starts_with("Func") && tname.contains('?') {
+									if expected_type.is_empty() {
+										return Err("Type annotation required".into());
+									} else {
+										let mut f = self.envs.current_scope()
+														 	 .get_func_mut(&fptr.fname)
+														 	 .unwrap();
+										f.set_type(&expected_type);
+										tname = expected_type.clone();
+									}
+								}
+							}
+
 							let mut elem = self.envs.current_scope().get_mut(vname)
 									   .expect(&format!("Variable '{}' not declared", vname));
-						
-						    let expected_type = elem.clone().unwrap().ty_name;
+
 						    if expected_type.is_empty() {
 						    	let inner_val = elem.as_mut().unwrap();
 						    	inner_val.ty_name = tname;
-						    } else if expected_type != tname {
+						    } else if *expected_type != tname {
 						    	return Err(format!("mismatched types: expected {}, found {}",
 						    			expected_type, tname));
 						    }
@@ -502,7 +527,6 @@ impl<'a> Interpreter<'a> {
 						let value = Value::new(vname.clone(), val.typename(), Some(vitem.clone()));
 
 						if let TypedItem::Closure(ref b) = val {
-							//println!("assign:closure here");
 							let func = *b.clone();
 					    	Ok(self.def_func_ptr(vname.clone(), &val, func, *in_func, false))
 					    } else {
