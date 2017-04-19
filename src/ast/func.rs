@@ -4,7 +4,7 @@ use super::env::Env;
 use std::collections::HashSet;
 use regex::Regex;
 
-type NameArgPair = (Vec<Statement>, Vec<String>);
+type NameArgPair = (Vec<Statement>, Vec<String>, Vec<String>);
 
 #[derive(Debug, Clone)]
 pub struct Function {
@@ -80,6 +80,20 @@ pub struct FnPtr {
 	pub def: Option<Box<Function>>
 }
 
+#[derive(Default)]
+pub struct FAssigns {
+	pub p_assigns: Vec<Statement>,
+	pub subp_assigns: Vec<Statement>,
+	pub vnames: Vec<String>,
+	pub vals: Vec<String>
+}
+
+impl FAssigns {
+	pub fn new(p: Vec<Statement>, subp: Vec<Statement>, vns: Vec<String>, vals: Vec<String>) -> FAssigns {
+		FAssigns{p_assigns: p, subp_assigns: subp, vnames: vns, vals: vals}
+	}
+}
+
 impl FnPtr {
 	pub fn new(fname: String, ftype: String, isdef: bool, def: Option<Function>) -> FnPtr {
 		FnPtr{fname: fname, ftype: ftype, is_def: isdef, def: def.map(Box::new)}
@@ -123,27 +137,31 @@ impl Function {
 	*  If number of arguments provided matches the number of parameters, then
 	*  a vector of assign statements are returned, otherwise an error
 	*/
-	pub fn match_args(&self, fname: String, args: &Option<ArgList>) -> Result<NameArgPair, String> {
+	pub fn match_args(&self, fname: &str, args: &Option<ArgList>) -> Result<FAssigns, String> {
 		let params = if self.params.is_none() { vec![] } else { self.params.clone().unwrap() };
 		let args = if args.is_none() { vec![] } else { args.clone().unwrap().0 };
 		let nparams = params.len();
 		if nparams == args.len() {
-			let mut assigns: Vec<Statement> = vec![];
-			let mut vnames: Vec<String> = vec![];
+			let mut fassigns = FAssigns{ ..Default::default() };
+			let mut i = 0;
 			for ppair in params.iter().zip(args.iter()) {
 				if let Parameter::Full{ref varname, ref typename} = *ppair.0 {
 					let v = Expression::Variable(varname.clone());
-					let expr = Statement::Assign{var: v, value: ppair.1.clone(), in_func: true};
-					vnames.push(varname.clone());
-					assigns.push(Statement::new_let(varname.clone(),
+					let param_name = format!("@{}:param_{}", fname, i);
+					let pvar = Expression::Variable(param_name.clone());
+					let subpexpr = Statement::Assign{var: pvar, value: ppair.1.clone(), in_func: true};
+					fassigns.vnames.push(varname.clone());
+					fassigns.vals.push(param_name.clone());
+					fassigns.p_assigns.push(Statement::new_let(param_name.clone(),
 													Some(typename.clone()),
-													Some(expr), true));
+													Some(subpexpr), true));
 				} else {
-					vnames.push("".into());
-					assigns.push(Statement::Empty);
+					fassigns.vnames.push("".into());
+					fassigns.p_assigns.push(Statement::Empty);
 				}
+				i += 1;
 			}
-			Ok((assigns, vnames))
+			Ok(fassigns)
 		} else {
 			Err(format!("Expected {} arguments to {}, got {}", nparams, fname, args.len()))
 		}

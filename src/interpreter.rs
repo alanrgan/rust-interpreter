@@ -424,31 +424,25 @@ impl<'a> Interpreter<'a> {
 	}
 
 	fn func_call(&mut self, v: &TypedItem, alias: String, args: &Option<ArgList>) -> Result<TypedItem, String> {
-		//let mut retval;
 		let mut env = self.envs.current_scope().clone();
 		if let TypedItem::FnPtr(ref fptr) = *v {
 			let name = &fptr.fname;
 			if let Some(func) = env.get_func_mut(name) {
-				// TODO: to fix parameter name conflicts (issue #10)
-				// have two-phase assignments. Keep temporary variables
-				// that represent parameter names: @param_{1..N}
-				// assign the arguments to those
-				// then fetch_and_set those names in the func scope
-				let (assigns, vnames) = func.match_args(alias.clone(), args).unwrap(); 
-				for stmt in assigns {
+				let fassigns = func.match_args(name, args)?;
+				for stmt in fassigns.p_assigns {
 					self.visit_statement(&stmt)?;
 				}
 
 				let mut e = func.clone().env;
 				e.in_call = true;
-				e.fetch_and_set(self.envs.current_scope(), vnames);
+				e.fetch_and_set(self.envs.current_scope(), &fassigns.vnames, &fassigns.vals);
+				self.envs.remove_all(&fassigns.vals);
 				self.envs.push(e.clone());
 
 				if let Statement::Compound{ref mut children, ref mut env} = func.conseq {
 					*env = Some(e);
 				}
 				let retval = self.visit_statement(&func.conseq)?;
-				//println!("{:?}", retval);
 				self.envs.pop();
 				let rval = retval.clone().unwrap_ret();
 				let rtype = rval.as_ref().unwrap().typename();
