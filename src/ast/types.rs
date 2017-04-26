@@ -33,12 +33,22 @@ pub trait DotOp {
 	fn dot_val(&self, right: &str) -> Result<TypedItem, &str> {
 		Err("Undefined dot_val")
 	}
+	fn dot_mval(&mut self, right: &str) -> Result<TypedItem, &str> {
+		Err("Undefined dot_mval")
+	}
 	fn dot_val_ref(&self, right: &str) -> Result<&TypedItem, &str> {
 		Err("Undefined dot_val_ref")
 	}
 	fn dot_val_mref(&mut self, right: &str) -> Result<&mut TypedItem, &str> {
 		Err("Undefined dot_val_mref")
 	}
+}
+
+pub enum DotOpTy {
+	MRef,
+	Ref,
+	Val,
+	MVal
 }
 
 impl Object {
@@ -166,6 +176,21 @@ impl DotOp for List {
 				let func = FuncBuilder::new().conseq(conseq).retval("int").done();
 				Ok(TypedItem::from(func))
 			},
+			_ => Err("Undefined op for list")
+		}
+	}
+	fn dot_mval(&mut self, right: &str) -> Result<TypedItem, &str> {
+		match right {
+			"push" => {
+				self.push(ListElem::Value(Expression::Variable("val".into())));
+				let conseq = Statement::Return{rval: Some(self.clone().into())};
+				let func = FuncBuilder::new()
+									   .param("val", "Any")
+									   .conseq(conseq)
+									   .retval("list").done();
+				
+				Ok(TypedItem::from(func))
+			}
 			_ => Err("Undefined op for list")
 		}
 	}

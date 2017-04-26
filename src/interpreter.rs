@@ -147,10 +147,10 @@ impl<'a> Interpreter<'a> {
 			},
 			Expression::DotOp(ref expr) => {
 				match expr.left {
-					Expression::Value(ref v) => self.apply_dot(v, &expr.right),
+					Expression::Value(ref v) => self.apply_dot(v, expr),
 					ref v => {
 						let e = self.visit_expr(v)?;
-						self.apply_dot(&e, &expr.right)
+						self.apply_dot(&e, expr)
 					}
 				}
 			},
@@ -239,9 +239,10 @@ impl<'a> Interpreter<'a> {
 					.and_then(|value| {
 						if value {
 							self.visit_statement(&if_stmt.conseq)
+						} else if if_stmt.alt.is_some() {
+							self.visit_statement(&if_stmt.alt.as_ref().unwrap())
 						} else {
-							if_stmt.alt.clone()
-							.map_or(Ok((Primitive::Empty).into()), |alt| self.visit_statement(&alt))
+							Ok(TypedItem::empty())
 						}
 					})
 			},
@@ -257,20 +258,18 @@ impl<'a> Interpreter<'a> {
 					} else { break; }
 				}
 				pred_val.unwrap().unpack::<bool>()
-					.map_err(|_| "expected boolean expression in 'while' statement".to_string())
-					.unwrap();
+					.map_err(|_| "expected boolean expression in 'while' statement".to_string())?;
 				Ok((Primitive::Empty).into())
 			},
 			Statement::For(ref fs) => {
 				if let Expression::Variable(ref vname) = fs.var {
 					let list = self.visit_expr(&fs.range)
 						.and_then(|r| r.unpack::<List>()
-						.map_err(|_| "expected list in for loop".to_string()))
-						.unwrap();
+						.map_err(|_| "expected list in for loop".to_string()))?;
 
 					for elem in list.values {
 						let prim = match elem {
-							ListElem::Value(ref expr) => self.visit_expr(expr).unwrap(),
+							ListElem::Value(ref expr) => self.visit_expr(expr)?,
 							ListElem::SubList(ref list) => Primitive::Array(list.clone()).into(),
 							_ => unreachable!()
 						};
@@ -330,9 +329,7 @@ impl<'a> Interpreter<'a> {
 				self.def_func_ptr(name.clone(), &val, fun, false, true);
 				Ok(TypedItem::empty())
 			},
-			Statement::FuncCall(ref call) => {
-				self.visit_expr(call)
-			},
+			Statement::FuncCall(ref call) => self.visit_expr(call),
 			Statement::Return{ref rval} => {
 				rval.as_ref()
 					.map_or(Ok(TypedItem::empty()),
@@ -361,7 +358,7 @@ impl<'a> Interpreter<'a> {
 			}
 			Statement::Print(ref expr) => {
 				let res = self.visit_expr(expr)?;
-				let _ = self.print_item(res);
+				self.print_item(res);
 				Ok(TypedItem::empty())
 			},
 			Statement::Expr(ref expr) => self.visit_expr(expr),
@@ -387,40 +384,64 @@ impl<'a> Interpreter<'a> {
 
 	fn print_item(&self, t: TypedItem) {
 		// allow overriding of print function
-		print!("{}",t.to_string());
+		print!("{}", t.to_string());
 	}
 
-	fn apply_dot(&mut self, v: &TypedItem, right: &str) -> Result<TypedItem, String> {
+	fn apply_dot(&mut self, v: &TypedItem, expr: &DotOpExpression) -> Result<TypedItem, String> {
 		match *v {
-			TypedItem::Tuple(ref tup) => self.apply_dot_helper(Box::new(tup.clone()), right, true),
+			TypedItem::Tuple(ref tup) => {
+				self.apply_dot_helper::<Tuple>(tup.clone(), expr, DotOpTy::Ref)
+			},
 			TypedItem::Primitive(Primitive::Str(ref s)) => {
-				self.apply_dot_helper(Box::new(s.clone()), right, false)
+				self.apply_dot_helper::<String>(s.clone(), expr, DotOpTy::Val)
 			},
 			TypedItem::Primitive(Primitive::Array(ref l)) => {
-				self.apply_dot_helper(Box::new(l.clone()), right, false)
+				let mut z = l.clone();
+				match &*expr.right {
+					"push" => self.apply_dot_mut::<List>(&mut z, expr),
+					_ => self.apply_dot_helper::<List>(z, expr, DotOpTy::Val)
+				}
 			},
-			_ => Ok(TypedItem::empty())
+			_ => Err(format!("Undefined dot op for type {}", v.typename()))
 		}
 	}
 
-	fn apply_dot_helper(&mut self, ditem: Box<DotOp>, right: &str, as_ref: bool) -> Result<TypedItem, String> {
+	fn apply_dot_helper<T>(&mut self, ditem: T, expr: &DotOpExpression, as_ref: DotOpTy) -> Result<TypedItem, String> 
+		where T: DotOp {
 		let res = {
-			if as_ref {
-    			ditem.dot_val_ref(right)
+			match as_ref {
+    			DotOpTy::Ref => {
+    				ditem.dot_val_ref(&expr.right)
 				   	   .map(|x| x.clone())
 				       .map_err(|e| e.to_string())
-		    } else {
-			  	ditem.dot_val(right)
+				},
+				DotOpTy::Val | _ => {
+					ditem.dot_val(&expr.right)
 	     	   	     .map(|x| x.clone())
 	     			 .map_err(|e| e.to_string())
-		  	}
+				}
+		    }
 		};
 		if let Ok(TypedItem::Closure(ref b)) = res.clone() {
 			let func = *b.clone();
-    		Ok(self.def_func_ptr("@tmp".to_string(), &res.unwrap(), func, false, false))
+    		Ok(self.def_func_ptr("@tmp".to_string(), &res?, func, false, false))
 	    } else {
 	    	res
     	}
+	}
+
+	fn apply_dot_mut<T>(&mut self, ditem: &mut T, expr: &DotOpExpression) -> Result<TypedItem, String>
+		where T: DotOp {
+		let res = ditem.dot_mval(&expr.right)
+				   	   .map(|x| x.clone())
+				       .map_err(|e| e.to_string());
+
+		if let Ok(TypedItem::Closure(ref b)) = res.clone() {
+			let func = *b.clone();
+    		Ok(self.def_func_ptr("@tmp".to_string(), &res?, func, false, false))
+	    } else {
+	    	res
+    	}	
 	}
 
 	fn func_call(&mut self, v: &TypedItem, alias: String, args: &Option<ArgList>) -> Result<TypedItem, String> {
@@ -447,10 +468,10 @@ impl<'a> Interpreter<'a> {
 				let rval = retval.clone().unwrap_ret();
 				let rtype = rval.as_ref().unwrap().typename();
 				let func_rtype = func.rtype();
-				if rtype != func_rtype {
-					return Err(format!("{}: Expected return type {}, got {}",
-										 alias, func_rtype, rtype));
-				}
+				match_types(&func_rtype, &rtype)
+				 	.map_err(|_| format!("{}: Expected return type {}, got {}",
+							 alias, func_rtype, rtype))?;
+
 				if let Ok(TypedItem::FnPtr(ref fptr)) = rval {
 					self.extract_fnptr(fptr);
 				}
@@ -512,7 +533,7 @@ impl<'a> Interpreter<'a> {
 						    if expected_type.is_empty() {
 						    	let inner_val = elem.as_mut().unwrap();
 						    	inner_val.ty_name = tname;
-						    } else if *expected_type != tname {
+						    } else if *expected_type != tname && expected_type != "Any".to_string() {
 						    	return Err(format!("mismatched types: expected {}, found {}",
 						    			expected_type, tname));
 						    }
@@ -536,11 +557,17 @@ impl<'a> Interpreter<'a> {
 								.map(|val| val as usize)
 								.unwrap()
 							).collect::<Vec<_>>();
-
-						let stored_list = try!(self.fetch_var_mut(&brack_expr.var));
-						let list_elem = List::get_mut_at(stored_list, &indices)
-											.expect(&format!("invalid index {}", *indices.last().unwrap()));
-						*list_elem = ListElem::from(val.clone());
+						let z: Option<Value>;
+						{
+							let stored_list = try!(self.fetch_var_mut(&brack_expr.var));
+							{
+								let list_elem = List::get_mut_at(stored_list, &indices)
+													.expect(&format!("invalid index {}", *indices.last().unwrap()));
+								*list_elem = ListElem::from(val.clone());
+							}
+							z = stored_list.clone();
+						}
+						Env::set(&mut self.envs, brack_expr.var.clone(), z.unwrap(), false);
 						Ok(val)
 					},
 					
@@ -563,7 +590,7 @@ impl<'a> Interpreter<'a> {
 		let list_elem = {
 			let stored_list = try!(self.fetch_var_mut(&expr.var));
 			let elem = List::get_mut_at(stored_list, &indices);
-			elem.unwrap().clone()
+			elem.ok_or("Invalid index")?.clone()
 		};
 
 		match list_elem {
@@ -612,6 +639,14 @@ impl<'a> Interpreter<'a> {
 	fn check_type(&mut self, ty: &str) -> bool {
 		let valid_tuple = Tuple::check_valid(ty);
 		self.envs.current_scope().has_type(ty) || Function::check_valid_type(ty) || valid_tuple
+	}
+}
+
+fn match_types(expect: &str, got: &str) -> Result<(),()> {
+	if expect != got && expect != "Any" {
+		Err(())
+	} else {
+		Ok(())
 	}
 }
 

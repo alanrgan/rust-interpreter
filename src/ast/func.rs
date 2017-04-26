@@ -4,8 +4,6 @@ use super::env::Env;
 use std::collections::HashSet;
 use regex::Regex;
 
-type NameArgPair = (Vec<Statement>, Vec<String>, Vec<String>);
-
 #[derive(Debug, Clone)]
 pub struct Function {
 	pub env: Env,
@@ -143,8 +141,7 @@ impl Function {
 		let nparams = params.len();
 		if nparams == args.len() {
 			let mut fassigns = FAssigns{ ..Default::default() };
-			let mut i = 0;
-			for ppair in params.iter().zip(args.iter()) {
+			for (i,ppair) in params.iter().zip(args.iter()).enumerate() {
 				if let Parameter::Full{ref varname, ref typename} = *ppair.0 {
 					let v = Expression::Variable(varname.clone());
 					let param_name = format!("@{}:param_{}", fname, i);
@@ -159,7 +156,6 @@ impl Function {
 					fassigns.vnames.push("".into());
 					fassigns.p_assigns.push(Statement::Empty);
 				}
-				i += 1;
 			}
 			Ok(fassigns)
 		} else {

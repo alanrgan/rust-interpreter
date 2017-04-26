@@ -3,6 +3,7 @@ use super::token::*;
 use super::types::*;
 use super::list::*;
 use super::func::{ArgList,Function};
+use std::mem;
 
 pub trait MapIfNone<T> {
     //type Item;
@@ -56,9 +57,9 @@ impl Expression {
 		Expression::BinOp(Box::new(bexpr))
 	}
 
-	pub fn as_variable(&self) -> Option<String> {
-		if let Expression::Variable(ref vname) = *self {
-			Some(vname.clone())
+	pub fn as_variable(&mut self) -> Option<String> {
+		if let Expression::Variable(ref mut vname) = *self {
+			Some(mem::replace(vname, String::new()))
 		} else { None }
 	}
 }
@@ -115,7 +116,8 @@ pub struct BinOpExpression {
 #[derive(Debug, Clone)]
 pub struct DotOpExpression {
 	pub left: Expression,
-	pub right: String
+	pub right: String,
+	//pub args: Option<ArgList>
 }
 
 #[derive(Debug, Clone)]

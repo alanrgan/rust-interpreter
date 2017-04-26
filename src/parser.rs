@@ -1,6 +1,7 @@
 use lexer::Lexer;
 use ast::*;
 use regex::Regex;
+use std::mem;
 
 pub struct Parser<'a> {
 	lexer: Lexer<'a>,
@@ -145,7 +146,11 @@ impl<'a> Parser<'a> {
 		let mut alt = None;
 		if let Some(Token::Else) = self.current_token {
 			self.eat(Token::Else);
-			alt = Some(self.compound_statement());
+			if let Some(Token::If) = self.current_token {
+				alt = Some(self.conditional());
+			} else {
+				alt = Some(self.compound_statement());
+			}
 		}
 		Statement::If(Box::new(IfStatement::new(pred, conseq, alt)))
 	}
@@ -233,7 +238,7 @@ impl<'a> Parser<'a> {
 
 	fn parse_let(&mut self) -> Statement {
 		self.eat(Token::Let);
-		let var = self.variable();
+		let mut var = self.variable();
 		let mut tyname = None;
 		if let Some(Token::Colon) = self.current_token {
 			self.eat(Token::Colon);
@@ -254,11 +259,11 @@ impl<'a> Parser<'a> {
 
 	fn parse_type(&mut self) -> Result<String, String> {
 		let tyname = match self.current_token {
-			Some(Token::Ident(ref tname)) => {
+			Some(Token::Ident(ref mut tname)) => {
 				if tname == "Func" {
 					Ok(("".to_string(), true))
 				} else {
-					Ok((tname.clone(), false))
+					Ok((mem::replace(tname, String::new()), false))
 				}
 			},
 			Some(Token::LParen) => {
@@ -317,7 +322,7 @@ impl<'a> Parser<'a> {
 		match var {
 			Expression::Variable(_) | Expression::BrackOp(_) => {
 				Statement::Assign {
-					var: var.clone(),
+					var: var,
 					value: self.expr(0),
 					in_func: false
 				}
@@ -371,9 +376,11 @@ impl<'a> Parser<'a> {
 			self.eat(Token::LParen);
 			let args = self.arglist();
 			self.eat(Token::RParen);
-			expr = Expression::Call{left: Box::new(expr.clone()),
-									   alias: "".to_string(),
-									   args: args};
+			expr = Expression::Call {
+							left: Box::new(expr.clone()),
+							alias: "".to_string(),
+							args: args
+				   };
 			res = Some(expr.clone());
 		}
 		res		
@@ -383,8 +390,8 @@ impl<'a> Parser<'a> {
 		self.eat(Token::Def);
 		self.eat(Token::Class);
 		let rval: Statement;
-		if let Some(Token::Ident(ref tname)) = self.current_token {
-			rval = Statement::Define(Object::new(tname.clone()));
+		if let Some(Token::Ident(ref mut tname)) = self.current_token {
+			rval = Statement::Define(Object::new(mem::replace(tname, String::new())));
 		} else {
 			rval = Statement::Empty;
 		}
@@ -411,7 +418,7 @@ impl<'a> Parser<'a> {
 				let string = self.string();
 				Expression::from(Primitive::Str(string))
 			},
-			Token::LBrace => self.array(),
+			Token::LBrace => self.parse_list().into(),
 			Token::LParen => {
 				self.eat(Token::LParen);
 				let expr = self.expr(0);
@@ -488,7 +495,7 @@ impl<'a> Parser<'a> {
 		}
 	}
 
-	fn array(&mut self) -> Expression {
+	fn parse_list(&mut self) -> List {
 		self.eat_current();
 		let mut list_stack: Vec<List> = vec![];
 		list_stack.push(List::new());
@@ -500,26 +507,13 @@ impl<'a> Parser<'a> {
 						if let Some(mut lower_list) = list_stack.last_mut() {
 							lower_list.push(ListElem::SubList(list));
 						} else {
-							return Expression::from(list);
+							return list;
 						}
 					} else { unreachable!(); }
 				},
 				Some(Token::LBrace) => {
-					// we are either parsing a range or a sublist
-					// allow nested sublists
-					while let Some(Token::LBrace) = self.current_token {
-						self.eat_current();
-						// create a new sublist
-						let sublist = List::new();
-						list_stack.push(sublist);
-					}
-					let elem = self.try_parse_range();
-					if let ListElem::Range{..} = elem {
-						if let Some(Token::RBrace) = self.current_token {}
-						else { panic!("unexpected token"); }
-					}
-					let inner_list = list_stack.last_mut().unwrap();
-					inner_list.push(elem);
+					let top = list_stack.last_mut().unwrap();
+					top.push(ListElem::SubList(self.parse_list()));
 				},
 				Some(_) => {
 					let top = list_stack.last_mut().unwrap();
@@ -589,7 +583,7 @@ impl<'a> Parser<'a> {
 
 	fn variable(&mut self) -> Expression {
 		let tok = self.current_token.clone().unwrap();
-		if let Token::Ident(val) = tok {
+		if let Token::Ident(val) = tok{
 			self.eat_current();
 			Expression::Variable(val)
 		} else {
@@ -599,8 +593,8 @@ impl<'a> Parser<'a> {
 
 	fn ident(&mut self) -> Option<String> {
 		let mut id = None;
-		if let Some(Token::Ident(ref ident)) = self.current_token {
-			id = Some(ident.clone());
+		if let Some(Token::Ident(ref mut ident)) = self.current_token {
+			id = Some(mem::replace(ident, String::new()));
 		}
 		if id.is_some() { self.eat_current(); }
 		id

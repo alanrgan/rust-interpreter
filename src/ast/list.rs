@@ -12,7 +12,7 @@ pub struct List {
 pub enum ListElem {
 	Value(Expression),
 	SubList(List),
-	Range {start: Expression, end: Expression, step: Option<Expression> }
+	Range {start: Expression, end: Expression, step: Option<Expression>}
 }
 
 impl List {
@@ -63,6 +63,7 @@ impl From<TypedItem> for ListElem {
 	}
 }
 
+// TODO: replace Option with Result for error propagation
 impl List {
 	// returns reference to mutable elem
 	pub fn get_mut_at<'b>(nested_arr: &'b mut Option<Value>, 

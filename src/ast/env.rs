@@ -43,7 +43,7 @@ impl ScopeList {
 		self.envs.push(scope);
 	}
 
-	pub fn remove_all(&mut self, vnames: &Vec<String>) {
+	pub fn remove_all(&mut self, vnames: &[String]) {
 		self.current_scope().remove_all(vnames);
 	}
 
@@ -93,13 +93,13 @@ impl Env {
 		e
 	}
 
-	pub fn remove_all(&mut self, vnames: &Vec<String>) {
+	pub fn remove_all(&mut self, vnames: &[String]) {
 		for vn in vnames {
 			self.vars.remove(vn);
 		}
 	}
 
-	pub fn fetch_and_set(&mut self, other: &Env, vnames: &Vec<String>, values: &Vec<String>) {
+	pub fn fetch_and_set(&mut self, other: &Env, vnames: &[String], values: &[String]) {
 		for (key, val) in &other.vars {
 			if let Some(TypedItem::FnPtr(ref fptr)) = val.as_ref().unwrap().value {
 				if fptr.is_def {
